@@ -130,9 +130,15 @@
     if(dockEl&&state.started&&!document.body.classList.contains('hud-off')){const rc=dockEl.getBoundingClientRect();
       if(rc.height>0&&rc.top<height)want=clamp((height-rc.top)*.5,0,height*.2);}
     viewShift=lerp(viewShift,want,1-Math.exp(-dt*6));
-    const s=Math.round(viewShift),fov=2*Math.atan(Math.tan(cam.curFov*PI/360)*(height+2*s)/height)*180/PI;
-    if(Math.abs(camera.fov-fov)>.01||!camera.view||!camera.view.enabled||camera.view.offsetY!==2*s||camera.view.fullHeight!==height+2*s||camera.view.fullWidth!==width){
-      camera.fov=fov;camera.aspect=width/(height+2*s);camera.setViewOffset(width,height+2*s,0,2*s,width,height);
+    // and sideways, to the middle of the free space between the panels down the sides
+    let wantX=0;
+    if(state.started&&!document.body.classList.contains('hud-off')){const side=(el,left)=>{if(!el||+getComputedStyle(el).opacity<.3)return 0;const rc=el.getBoundingClientRect();
+        if(!(rc.width>0&&rc.height>height*.3))return 0;return left?Math.max(0,rc.right):Math.max(0,width-rc.left);};
+      wantX=clamp((side(sidePanels[0],true)-side(sidePanels[1],false))*.5,-width*.16,width*.16);}
+    viewShiftX=lerp(viewShiftX,wantX,1-Math.exp(-dt*4));
+    const s=Math.round(viewShift),sx=Math.round(viewShiftX),fov=2*Math.atan(Math.tan(cam.curFov*PI/360)*(height+2*s)/height)*180/PI;
+    if(Math.abs(camera.fov-fov)>.01||!camera.view||!camera.view.enabled||camera.view.offsetY!==2*s||camera.view.fullHeight!==height+2*s||camera.view.fullWidth!==width+2*Math.abs(sx)||camera.view.offsetX!==(sx<0?2*-sx:0)){
+      const W=width+2*Math.abs(sx);camera.fov=fov;camera.aspect=W/(height+2*s);camera.setViewOffset(W,height+2*s,sx<0?-2*sx:0,2*s,width,height);
     }
     // The lamp canopy shows only from below (its glowing underside); seen from
     // above it would just be a dark slab over the table, so it is left out.
@@ -151,13 +157,24 @@
       if(near)want=clamp((.62-cam.curEl)*6,0,1);
     }
     fadeUniforms.uFadeAmt.value=lerp(fadeUniforms.uFadeAmt.value,want,1-Math.exp(-dt*5));
+    // while any of it is see-through, the rails and cushions draw with their depth laid first (see ghostOf)
+    const on=fadeUniforms.uFadeAmt.value>.004;
+    if(on!==railGhosts){railGhosts=on;if(on&&!railMeshes){railMeshes=[];scene.traverse(o=>{if(o.isMesh&&!o.userData.ghostOf&&[].concat(o.material).some(mt=>mt&&mt.userData&&mt.userData.fadeable))railMeshes.push(o);});}
+      for(const m of railMeshes||[]){for(const mt of [].concat(m.material)){if(mt.transparent!==on){mt.transparent=on;mt.needsUpdate=true;}}
+        if(on||m.userData.ghost)ghostOf(m).visible=on;m.renderOrder=on?9:0;}}
   }
+  let railGhosts=false,railMeshes=null;
   // See-through: the referee fades when he stands between the camera and a
   // ball; the score panels and controls fade while a ball sits behind them
   // (hover a panel to bring it back).
   const _seg=new T.Vector3(),_scr=new T.Vector3();
-  let refFade=1,panelClock=0;
-  const PANELS=['.scoreboard','.match-panel','.scene-controls','.control-dock','.camera-switcher','.camera-tag'].map(q=>document.querySelector(q)).filter(Boolean);
+  let refFade=1,panelClock=0,viewShiftX=0;
+  // Everything drawn over the picture steps out of the way of the balls: it
+  // fades almost to nothing while any ball (its whole size on screen, with a
+  // margin) is behind it; hover it to bring it back.
+  const PANELS=['.scoreboard','.match-panel','.scene-controls','.control-dock','.camera-switcher','.camera-tag','.focus-tag','.comm-caption','.comm-tag',
+    '.bot-skip','.control-hint','.toast','.arena-reaction','.top-bar'].map(q=>document.querySelector(q)).filter(Boolean);
+  const sidePanels=[document.querySelector('.scene-controls'),document.querySelector('.match-panel')];
   function blocksView(x,z,radius,top){
     for(const b of balls){
       if(b.pocketed)continue;
@@ -170,12 +187,38 @@
     }
     return false;
   }
-  function setPersonOpacity(p,o){
-    p.obj.traverse(m=>{if(!m.isMesh)return;const mats=Array.isArray(m.material)?m.material:[m.material];
-      for(const mt of mats){if(!mt.userData.own){mt.userData.own=true;}
-        const tr=o<.99;if(mt.transparent!==tr||mt.depthWrite!==!tr){mt.transparent=tr;mt.depthWrite=!tr;mt.needsUpdate=true;}mt.opacity=o;}
-      m.castShadow=o>.5;});
+  // See-through done cleanly: an object fading out of the way first lays down
+  // its depth (an invisible copy drawn just before it), then its colour is
+  // blended over that, so only its nearest surface shows, evenly: never the
+  // inside of a coat, the back of an arm or the far side of a rail through the
+  // front. Cut-out hair keeps its shape as it fades.
+  function ghostOf(m){
+    let g=m.userData.ghost;if(g)return g;
+    const mats=(Array.isArray(m.material)?m.material:[m.material]).map(mt=>{const d=mt.clone();d.colorWrite=false;d.transparent=true;d.depthWrite=true;d.opacity=1;
+      d.alphaTest=mt.userData.alphaTest0??mt.alphaTest;d.blending=T.NoBlending;return d;});
+    const mat=Array.isArray(m.material)?mats:mats[0];
+    if(m.isSkinnedMesh){g=new T.SkinnedMesh(m.geometry,mat);g.bind(m.skeleton,m.bindMatrix);g.bindMode=m.bindMode;}
+    else g=new T.Mesh(m.geometry,mat);
+    if(m.morphTargetInfluences){g.morphTargetInfluences=m.morphTargetInfluences;g.morphTargetDictionary=m.morphTargetDictionary;}
+    g.frustumCulled=false;g.castShadow=g.receiveShadow=false;g.renderOrder=8;g.userData.ghostOf=m;g.visible=false;g.raycast=()=>{};
+    m.add(g);m.userData.ghost=g;return g;
   }
+  function fadeMesh(m,o){
+    const tr=o<.99,mats=Array.isArray(m.material)?m.material:[m.material];
+    for(const mt of mats){
+      if(mt.userData.alphaTest0===undefined)mt.userData.alphaTest0=mt.alphaTest;
+      if(mt.userData.transparent0===undefined)mt.userData.transparent0=mt.transparent;
+      const want=tr||mt.userData.transparent0;if(mt.transparent!==want){mt.transparent=want;mt.needsUpdate=true;}
+      mt.depthWrite=!mt.userData.transparent0||tr;mt.opacity=o;
+      if(mt.userData.alphaTest0>0)mt.alphaTest=tr?Math.max(.01,mt.userData.alphaTest0*o):mt.userData.alphaTest0;
+      mt.polygonOffset=tr;mt.polygonOffsetFactor=tr?-1:0;mt.polygonOffsetUnits=tr?-1:0;}
+    if(tr||m.userData.ghost)ghostOf(m).visible=tr;
+    m.renderOrder=tr?9:0;
+  }
+  function fadePerson(obj,o){
+    obj.traverse(m=>{if(!m.isMesh||m.userData.ghostOf)return;fadeMesh(m,o);m.castShadow=o>.5;});
+  }
+  function setPersonOpacity(p,o){fadePerson(p.obj,o);}
   function updateOcclusion(dt){
     const p=ref.person;
     if(p){
@@ -185,11 +228,13 @@
     }
     panelClock-=dt;if(panelClock>0)return;panelClock=.15;
     const pts=[];
-    if(state.started)for(const b of balls){if(b.pocketed)continue;_scr.set(b.x,BALL_Y,b.z).project(camera);
-      if(_scr.z<1)pts.push([(_scr.x+1)/2*width,(1-_scr.y)/2*height]);}
+    if(state.started)for(const b of balls){if(b.pocketed)continue;_scr.set(b.x,BALL_Y,b.z).project(camera);if(_scr.z>=1)continue;
+      const x=(_scr.x+1)/2*width,y=(1-_scr.y)/2*height;_seg.set(b.x,BALL_Y+R,b.z).project(camera);
+      pts.push([x,y,Math.max(4,Math.abs((1-_seg.y)/2*height-y))]);}
     for(const el of PANELS){
-      const rc=el.getBoundingClientRect(),m=8;
-      const hit=rc.width>0&&pts.some(([x,y])=>x>rc.left-m&&x<rc.right+m&&y>rc.top-m&&y<rc.bottom+m);
+      if(el.hidden){el.classList.remove('see-through');continue;}
+      const rc=el.getBoundingClientRect(),m=10;
+      const hit=rc.width>0&&pts.some(([x,y,r])=>x>rc.left-m-r&&x<rc.right+m+r&&y>rc.top-m-r&&y<rc.bottom+m+r);
       el.classList.toggle('see-through',hit);
     }
     paintHint();paintFocusTag();

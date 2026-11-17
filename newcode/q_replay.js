@@ -93,7 +93,7 @@
   function ballAt(r,id,t){const [a,b,k]=frameAt(r,t),o=r.ids.indexOf(id)*8;return new T.Vector3(lerp(a[o],b[o],k),lerp(a[o+1],b[o+1],k),lerp(a[o+2],b[o+2],k));}
   function playReplay(r,label,onEnd,kind){
     const d=r.d||drama(r),last=r.frames[r.frames.length-1].t;
-    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot});
+    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,reacted:0,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot});
     // The replay is a cut-away: the players are posed for the recorded shot and
     // put back exactly as they were when it ends.
     if(!cine.snap)cine.snap=playersSnapshot();
@@ -181,8 +181,9 @@
     if(sh){sh.pull=cueReplayPull(cine.t);
       if(cine.t>.5&&sh.goal.kind==='shot')sh.goal={kind:'hold'};      // stands up and watches it go
       const reactAt=cine.dur+.15;
-      if(cine.t>reactAt&&cine.react&&sh.act!=='cheer'&&sh.stLin<=0){sh.act='cheer';sh.t=0;sh.acts.cheer.time=1.2;
-        if(cine.kind==='ending')sound('frame');else sound('cheer');}}
+      if(cine.t>reactAt&&cine.react&&!cine.reacted&&sh.stLin<=0){cine.reacted=1;   // his reaction, and the room's: different every time
+        greetCrowd(cine.shooter,reactProfile(cine.shooter)==='composed'?['nod','acknowledge','salute']:['fistpump','acknowledge','salute','satisfied','wave','nod']);
+        crowdReact('cheer');if(cine.kind==='ending')sound('frame');else sound('cheer');}}
     replayCamera(dt);
     if(cine.t>cine.dur+(cine.react?2.6:1.0))endCine();
     return true;
@@ -214,7 +215,7 @@
         x:e[0]+(i?.5:-.5),z:e[1],yaw:Math.atan2(-e[0],-e[1]),pi:0,path:null,goal:{kind:'hold',fixed:true},hid,step:0});
       pl.head=pl.yaw;pl.w.sit=0;});
     const names=[introName(0),solo?'':introName(1)];
-    Object.assign(cine,{on:true,kind:'intro',t:0,dur:6+order.length*WALK_GAP+7.5,label:'',order,names,said:{},cut:true,phase:'',
+    Object.assign(cine,{on:true,kind:'intro',t:0,side:Math.random()<.5?-1:1,vary:Math.random(),dur:6+order.length*WALK_GAP+7.5,label:'',order,names,said:{},cut:true,phase:'',
       onEnd:()=>{for(let i=comm.queue.length-1;i>=0;i--)if(comm.queue[i].mc)comm.queue.splice(i,1);
         for(const pl of PL)Object.assign(pl,{act:'sit',t:0,sitLin:1,stLin:0,stance:0,v:0,path:null,x:CHAIRS[pl.i][0],z:CHAIRS[pl.i][1],yaw:0,goal:chairGoal(pl.i),fade:pl.hid?0:1,fadeTo:pl.hid?0:1});}});
     replayUI.querySelector('.replay-tag b').textContent='';
@@ -228,8 +229,8 @@
     const table=[-(OUT_X+.55)*.0+(i?.55:-.55),-(OUT_Z+.55)];       // where he stops to greet the crowd
     if(pl.step===0&&u>=1.2){pl.step=1;pl.fadeTo=1;pl.fade=1;startWalk(pl,{kind:'watch',x:table[0],z:table[1],yaw:Math.PI,fixed:true});
       pl.goal={kind:'watch',x:table[0],z:table[1],yaw:Math.PI,fixed:true};sound('applause',.75);crowdReact('cheer');}
-    else if(pl.step===1&&pl.act==='idle'&&Math.hypot(pl.x-table[0],pl.z-table[1])<.3){pl.step=2;setAct(pl,'cheer');}
-    else if(pl.step===2&&pl.act!=='cheer'){pl.step=3;pl.goal={...chairGoal(i),fixed:true};}
+    else if(pl.step===1&&pl.act==='idle'&&Math.hypot(pl.x-table[0],pl.z-table[1])<.3){pl.step=2;pl.greetEnd=time+greetCrowd(i);}   // a wave, a bow, the cue raised...
+    else if(pl.step===2&&time>pl.greetEnd){pl.step=3;pl.goal={...chairGoal(i),fixed:true};}
   }
   function updateIntro(dt){
     cine.t+=dt;const t=cine.t,order=cine.order;
@@ -251,9 +252,9 @@
     else if(walker){
       const [i,u]=walker,pl=PL[i],fx=Math.sin(pl.yaw),fz=Math.cos(pl.yaw),sx=Math.cos(pl.yaw),sz=-Math.sin(pl.yaw);
       if(u<4.2){phase='walk'+i;const k=clamp((u-1.6)/2.6,0,1),e=k*k*(3-2*k);   // shoes first, rising to the face
-        pos=_ia.set(pl.x+fx*(1.5+.4*e)+sx*(.55+.25*e),FLOOR_Y+.28+1.25*e,pl.z+fz*(1.5+.4*e)+sz*(.55+.25*e));
+        pos=_ia.set(pl.x+fx*(1.5+.4*e)+sx*(.55+.25*e)*cine.side,FLOOR_Y+.28+1.25*e,pl.z+fz*(1.5+.4*e)+sz*(.55+.25*e)*cine.side);
         look=_ib.set(pl.x+fx*.3,FLOOR_Y+.18+1.3*e,pl.z+fz*.3);fov=34;}
-      else if(u<7.6){phase='greet'+i;pos=_ia.set(pl.x+2.6,FLOOR_Y+1.9,pl.z+3.3);look=_ib.set(pl.x*.6,FLOOR_Y+1.0,pl.z*.6);fov=40;}
+      else if(u<7.6){phase='greet'+i;pos=_ia.set(pl.x+2.6*cine.side,FLOOR_Y+1.55+.7*cine.vary,pl.z+3.3-.6*cine.vary);look=_ib.set(pl.x*.6,FLOOR_Y+1.0,pl.z*.6);fov=40;}
       else{phase='chair'+i;pos=_ia.set(CHAIRS[i][0]+1.4,FLOOR_Y+1.35,CHAIRS[i][1]+2.3);look=_ib.set(CHAIRS[i][0],FLOOR_Y+.9,CHAIRS[i][1]);fov=36;}
     }
     else if(t<tRef+4){phase='referee';const p=ref.person&&ref.person.obj,x=p?p.position.x:0,z=p?p.position.z:0;

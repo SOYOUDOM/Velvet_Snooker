@@ -39,9 +39,30 @@
   }
   // Tone of voice: a little quicker and brighter at the big moments, hushed
   // when it is tense.
-  const HOT=new Set(['pot_long','pot_double','pot_fluke','break_100','break_big','clearance','frame_won_close','match_won','escape_good','crowd','live_wow','live_ooh','snooker_laid','pack_split']);
-  const HUSH=new Set(['frame_ball','match_ball','max_on','respotted_black','thinking','score_close','needs_snookers']);
-  const tone=cat=>{const c=cat.split('@')[0];return HOT.has(c)?{rate:1.035,gain:1.15}:HUSH.has(c)?{rate:.985,gain:.82}:{rate:1,gain:1};};
+  // How it is said follows the moment. A great shot, a big break or a frame won comes quicker, higher, louder
+  // and brighter, often after a quick "Oh, yes!" or "Superb!" in the same voice; a fluke more so, with an
+  // "Ooh!"; a miss, a ball rattling in the jaws, an in-off or a poor safety drops lower, slower, softer and
+  // duller, often after an "Ooh..." or an "Oh dear."; the tense moments (frame ball, the re-spotted black,
+  // needing snookers) are hushed. Each recording stays the same; its delivery is shaped as it plays.
+  const MOOD={
+    thrill:new Set(['pot_long','pot_double','pot_pressure','break_100','break_big','clearance','frame_won','frame_won_close','match_won','escape_good','crowd','live_wow','snooker_laid','pack_split','position_good','safety_good']),
+    surprise:new Set(['pot_fluke']),
+    gutted:new Set(['miss_easy','miss_hard','jaws','in_off','live_ooh','live_ohno','position_poor','escape_poor','safety_poor','foul_generic','break_off_poor']),
+    tense:new Set(['frame_ball','match_ball','max_on','respotted_black','thinking','score_close','needs_snookers'])};
+  const TONES={thrill:{rate:1.07,gain:1.4,bright:4.5,lead:['live_wow',/^(Oh, yes!|Shot!|Lovely!|Superb!|Oh, beautiful!)$/],leadP:.45},
+    surprise:{rate:1.1,gain:1.5,bright:5.5,lead:['live_ooh',/^(Ooh!)$/,'live_wow',/^(Oh, yes!)$/],leadP:.75},
+    gutted:{rate:.93,gain:.9,bright:-6,lead:['live_ooh',/^(Ooh!|Ooh, no!|Ohh, so close!|Oh, rattled!)$/,'live_ohno',/^(Oh, no!|Oh dear\.)$/],leadP:.5},
+    tense:{rate:.97,gain:.76,bright:-2.5}};
+  const moodOf=cat=>{const c=cat.split('@')[0];for(const k in MOOD)if(MOOD[k].has(c))return k;return null;};
+  const tone=cat=>{const m=moodOf(cat),t=m&&TONES[m];return t?{rate:t.rate*(1+(Math.random()-.5)*.025),gain:t.gain,bright:t.bright,mood:m}:{rate:1,gain:1};};
+  // A quick reaction in the commentator's own voice before the line (not before the live calls themselves).
+  function leadFor(k,cat){
+    const c=cat.split('@')[0],t=TONES[moodOf(cat)];if(!t||!t.lead||c.startsWith('live_')||Math.random()>t.leadP)return null;
+    const L=[];for(let j=0;j<t.lead.length;j+=2)for(const l of (COMM.team[k].lines[t.lead[j]]||[]))if(t.lead[j+1].test(l[0]))L.push(l);
+    if(c==='jaws')for(let j=L.length-1;j>=0;j--)if(/no!|dear/.test(L[j][0]))L.splice(j,1);                 // a near thing, not a disaster
+    if(c==='in_off'||c==='foul_generic')for(let j=L.length-1;j>=0;j--)if(/close|rattled/.test(L[j][0]))L.splice(j,1);
+    return L.length?L[Math.floor(Math.random()*L.length)]:null;
+  }
   // A conversation: one opens, the other answers, and the first may close it.
   function commThread(cat,opt){
     const list=(COMM.threads||[]).filter(t=>t.cat===cat&&!comm.usedThr.has(t.id));if(!list.length)return false;
@@ -84,7 +105,8 @@
       const t=COMM.team[k],free=ls=>(ls||[]).filter(l=>!comm.used.has(k+l[0])),own=who?free(t.lines[cat+'@'+who]):[];
       const mine=own.length&&(Math.random()<.65||!(t.lines[cat]||[]).length),opts=mine?own:free(t.lines[cat]);if(!opts.length)continue;
       const line=opts[Math.floor(Math.random()*opts.length)];comm.used.add(k+line[0]);
-      const parts=[];if(!mine&&who&&t.names[who]&&Math.random()<.34)parts.push(['',t.names[who]]);
+      const parts=[],lead=leadFor(k,cat);if(lead)parts.push(lead);
+      if(!mine&&who&&t.names[who]&&Math.random()<.34)parts.push(['',t.names[who]]);
       parts.push(line);
       comm.queue.push({k,parts,delay:opt.delay??.7,...tone(cat)});comm.lastAt=time;comm.lastCat[cat]=time;
       const o=comm.pair[0]===k?comm.pair[1]:comm.pair[0],rep=COMM.team[o].replies.filter(l=>!comm.used.has(o+l[0]));
@@ -109,7 +131,8 @@
         for(const [text,b64] of it.parts){
           const buf=await commBuffer(ctx,b64).catch(()=>null);if(!buf)continue;
           const src=ctx.createBufferSource(),rate=it.rate||1;src.buffer=buf;src.playbackRate.value=rate;let out=src;
-          if(it.gain&&it.gain!==1){const g=ctx.createGain();g.gain.value=it.gain;src.connect(g);out=g;}
+          if(it.bright){const f=ctx.createBiquadFilter();f.type='highshelf';f.frequency.value=2400;f.gain.value=it.bright;out.connect(f);out=f;}   // brighter when thrilled, duller when gutted
+          if(it.gain&&it.gain!==1){const g=ctx.createGain();g.gain.value=it.gain;out.connect(g);out=g;}
           out.connect(it.mc?voiceInput(ctx):commBus(ctx));src.start();
           if(text)commCaption(it.mc?'MC':COMM.team[it.k].name,text);comm.lastAt=time;
           await waitSec(buf.duration/rate+.1);

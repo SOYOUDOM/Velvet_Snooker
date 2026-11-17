@@ -38,13 +38,15 @@ js = rep(js, "  const TOUR_FIELD=['trump',", "  const TOUR_BASE=['trump',", 'tou
 js = rep(js, "  const TOUR_RATING={trump:92,", "  const TOUR_RATING0={trump:92,", 'tour rating')
 js = rep(js, "  const TOUR_FORMATS=",
          "  const tourRating=id=>{const o=OPPONENTS.find(x=>x.id===id);return o&&o.rating!=null&&!isNaN(+o.rating)?+o.rating:(TOUR_RATING0[id]||84);};\n"
-         "  function tourField(){\n"
+         "  function tourField(shuffle=false){\n"
+         "    if(shuffle){const all=OPPONENTS.filter(o=>o.id!=='club').map(o=>o.id).filter((id,k,a)=>a.indexOf(id)===k),must=all.filter(id=>OPPONENTS.find(o=>o.id===id).tour),rest=all.filter(id=>!must.includes(id));\n"
+         "      for(let i=rest.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[rest[i],rest[j]]=[rest[j],rest[i]];}\n"
+         "      const f=must.concat(rest).slice(0,15);while(f.length<15)f.push(f.length?f[f.length%Math.max(1,f.length)]:'club');return f;}\n"
          "    const f=TOUR_BASE.filter(id=>OPPONENTS.some(o=>o.id===id));\n"
          "    for(const o of OPPONENTS)if(o.tour&&o.id!=='club'&&!f.includes(o.id))f.push(o.id);\n"
          "    for(const o of OPPONENTS)if(f.length<15&&o.id!=='club'&&!f.includes(o.id))f.push(o.id);\n"
          "    return f.map((id,k)=>[id,k]).sort((a,b)=>tourRating(b[0])-tourRating(a[0])||a[1]-b[1]).map(x=>x[0]).slice(0,15);\n"
          "  }\n  const TOUR_FORMATS=", 'tour field fn')
-js = rep(js, "    const pool=TOUR_FIELD.slice(8).concat('you');", "    const TOUR_FIELD=tourField(),pool=TOUR_FIELD.slice(8).concat('you');", 'tour pool')
 js = rep(js, "p=1/(1+Math.exp(-((TOUR_RATING[m.a]||84)-(TOUR_RATING[m.b]||84))/7));", "p=1/(1+Math.exp(-(tourRating(m.a)-tourRating(m.b))/7));", 'tour sim')
 # the right bodies at the start of a match, and in the chairs when you pick an opponent
 js = rep(js, "function beginNewGame(increment=false,match=null,mode=null){state.mode=mode||chosenMode;state.started=true;state.tour=null;",

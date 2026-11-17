@@ -132,10 +132,10 @@
   function imageTexture(key,rx,ry){const t=texLoader.load(MATERIAL_IMAGES[key]);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=maxAniso;t.colorSpace=T.SRGBColorSpace;return t;}
   function canvasTexture(c,rx,ry,srgb=true){const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=maxAniso;if(srgb)t.colorSpace=T.SRGBColorSpace;return t;}
   // Smart rail fade: rails and cushions between a low camera and a ball near
-  // that cushion dissolve (dithered, so nothing needs depth sorting).
+  // that cushion turn see-through (evenly, with their depth laid first: see ghostOf).
   const fadeUniforms={uFadeDir:{value:new T.Vector2(0,1)},uFadeAmt:{value:0}};
   function fadeable(material){
-    material.alphaHash=true;
+    material.userData.fadeable=true;
     material.onBeforeCompile=shader=>{
       shader.uniforms.uFadeDir=fadeUniforms.uFadeDir;shader.uniforms.uFadeAmt=fadeUniforms.uFadeAmt;
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vFadeXZ;')
@@ -1238,11 +1238,11 @@
       p.obj.position.set(st.x+Math.sin(st.yaw)*.05,st.y,st.z+Math.cos(st.yaw)*.05);p.obj.rotation.y=st.yaw;
       p.obj.scale.multiplyScalar(.97+rnd()*.06);
       p.obj.traverse(o=>{if(o.isMesh){o.castShadow=false;o.receiveShadow=false;}});
-      const idle=p.clip('sit',Math.floor(rnd()*6)),t0=rnd()*30,M=P.motions||{},fem=!!tpl.female,claps=M[fem?'clap_female':'clap_male']||['clap'];
+      const idle=p.clip('sit',Math.floor(rnd()*6)),t0=rnd()*30,M=P.motions||{},fem=!!tpl.female;
       crowd.push({p,yaw:st.yaw,rank:rnd(),acc:rnd()*.06,look:.3,clapAmt:0,clapTarget:0,clapStart:0,clapEnd:0,female:fem,
-        habAt:time+4+rnd()*40,hab:null,habAmt:0,habEnd:0,lastHab:'',cheer:null,cheering:false,
-        idle:p.play(idle,{time:t0}),body:p.play(idle,{part:'body',time:t0,weight:0}),
-        clap:p.play(claps[Math.floor(rnd()*claps.length)],{part:'arms',time:.4+rnd()*5,weight:0,timeScale:.95+rnd()*.2})});
+        habAt:time+4+rnd()*40,hab:null,habAmt:0,habEnd:0,lastHab:'',
+        claps:M[fem?'clap_female':'clap_male']||['clap'],cheers:M[fem?'cheer_female':'cheer_male']||['cheer'],arm:null,cheer:null,swapAt:0,
+        idle:p.play(idle,{time:t0}),body:p.play(idle,{part:'body',time:t0,weight:0})});
       crowdGroup.add(p.obj);
     }
     buildCrowdCutouts();
@@ -1270,11 +1270,11 @@
     let delta=ref.targetS-ref.s;delta-=Math.round(delta/loop.len)*loop.len;
     ref.v=lerp(ref.v,clamp(delta*2.0,-.95,.95),1-Math.exp(-dt*4.2));
     if(Math.abs(delta)<.012&&Math.abs(ref.v)<.05)ref.v=0;
-    ref.s+=ref.v*dt;
-    const at=loopAt(ref.s),speed=Math.abs(ref.v);
+    ref.s+=ref.v*dt*(ref.slow??1);                     // (he waits while a player crosses in front of him)
+    const at=loopAt(ref.s),speed=Math.abs(ref.v*(ref.slow??1));
     if(ref.task&&Math.abs(delta)<.03&&speed<.08){
-      if(!ref.task.started){ref.task.started=true;ref.task.until=time+2.7;
-        if(ref.acts){const a=ref.acts.take;a.reset();a.setEffectiveTimeScale(1.75);a.play();}}
+      if(!ref.task.started){ref.task.started=true;const hand=ref.task.give!=null||ref.task.collect!=null;ref.task.until=time+(hand?1.4:ref.task.fetchRest||ref.task.stow?2.0:2.7);
+        if(ref.acts&&!hand){const a=ref.acts.take;a.reset();a.setEffectiveTimeScale(1.75);a.play();}}   // (a rest passes from hand to hand: see kitTick)
       else if(time>ref.task.until){ref.task=null;if(!ref.queue.length)ref.waitUntil=time+1.1;}
     }
     if(!ref.task&&!ref.queue.length&&ref.waitUntil&&time>ref.waitUntil){ref.targetS=ref.home;ref.waitUntil=0;}
@@ -1284,7 +1284,7 @@
     ref.yaw+=wrapAngle(face-ref.yaw)*(1-Math.exp(-dt*5.5));
     const p=ref.person;if(!p)return;
     p.obj.position.set(at.x,FLOOR_Y,at.z);p.obj.rotation.y=ref.yaw;
-    const taking=!!(ref.task&&ref.task.started&&time<ref.task.until);
+    const taking=!!(ref.task&&ref.task.started&&time<ref.task.until&&ref.task.give==null&&ref.task.collect==null);
     ref.takeW=lerp(ref.takeW,taking?1:0,1-Math.exp(-dt*(taking?5:3.5)));
     ref.walkW=lerp(ref.walkW,clamp((speed-.05)/.3,0,1),1-Math.exp(-dt*8));
     const {idle,walk,take}=ref.acts;
@@ -1326,8 +1326,13 @@
         if(!on&&c.habAmt<.02){c.hab.setEffectiveWeight(0);c.hab.stop();c.hab=null;c.habAmt=0;c.habAt=time+rand(10,50);}}
       const h=c.hab?c.habAmt*(1-c.clapAmt):0;
       if(c.hab)c.hab.setEffectiveWeight(h);
+      // the arms: a cheer, played once, that runs on into clapping; or clapping; eased in and out
+      const sw=c.cheer?clamp((time-c.swapAt)/.7,0,1):1,sws=sw*sw*(3-2*sw);
+      if(c.cheer)c.cheer.setEffectiveWeight(c.clapAmt*(1-sws));
+      if(c.arm)c.arm.setEffectiveWeight(c.clapAmt*sws);
       c.idle.setEffectiveWeight((1-c.clapAmt)*(1-h));c.body.setEffectiveWeight(c.clapAmt);
-      c.clap.setEffectiveWeight(c.cheering?0:c.clapAmt);if(c.cheer)c.cheer.setEffectiveWeight(c.cheering?c.clapAmt:0);
+      if(c.clapAmt<.01&&time>c.clapEnd&&(c.cheer||c.arm)){if(c.cheer){c.cheer.setEffectiveWeight(0);c.cheer.stop();c.cheer=null;}
+        if(c.arm){c.arm.setEffectiveWeight(0);c.arm.stop();c.arm=null;}}
       c.p.mixer.update(d);
       c.look+=(interest-c.look)*(1-Math.exp(-d*1.8));
       turnHead(c.p,c.yaw,fp[0],fp[1],c.look*(1-.75*h));
@@ -1343,13 +1348,22 @@
     }
     for(const c of crowd){
       if(Math.random()>=chance)continue;
-      // a big moment: some raise their arms instead of clapping
-      c.cheering=kind==='cheer'&&Math.random()<.3;
-      if(c.cheering&&!c.cheer){const L=M[c.female?'cheer_female':'cheer_male']||['cheer'];c.cheer=c.p.play(L[Math.floor(Math.random()*L.length)],{part:'arms',weight:0,time:rand(0,1)});}
+      // a fresh choice every time (who reacts, how soon, for how long, which motion, how fast), so no two
+      // reactions, a replay's included, look alike; at a big moment some raise their arms first, then clap
+      const big=kind==='cheer',delay=rand(.06,big?.75:1),busy=c.clapAmt>.05;
       if(c.hab)c.habEnd=Math.min(c.habEnd,time);
-      c.clapTarget=kind==='cheer'?1:.9;c.clapStart=time+rand(.06,.6);
-      c.clapEnd=time+(kind==='cheer'?rand(3.6,5.6):rand(1.6,3.0));
-      c.clap.setEffectiveTimeScale(kind==='cheer'?rand(1.2,1.45):rand(.9,1.1));
+      c.clapTarget=big?rand(.9,1):rand(.7,.95);
+      if(!busy)c.clapStart=time+delay;
+      c.clapEnd=Math.max(c.clapEnd,time+delay+(big?rand(3.2,5.8):rand(1.4,3.0)));
+      const ts=big?rand(1.12,1.45):rand(.85,1.12);
+      if(c.arm&&!busy){c.arm.setEffectiveWeight(0);c.arm.stop();c.arm=null;}
+      if(!c.arm)c.arm=c.p.play(c.claps[Math.floor(Math.random()*c.claps.length)],{part:'arms',weight:0,time:rand(.3,4),timeScale:ts});
+      else c.arm.setEffectiveTimeScale(ts);
+      if(big&&!busy&&!c.cheer&&Math.random()<.32){
+        const a=c.p.play(c.cheers[Math.floor(Math.random()*c.cheers.length)],{part:'arms',weight:0,timeScale:rand(.88,1.12)});
+        a.setLoop(T.LoopOnce,1);a.clampWhenFinished=true;a.reset();a.startAt(c.p.mixer.time+delay);a.play();c.cheer=a;
+        const dur=a.getClip?a.getClip().duration:2.5;c.swapAt=c.clapStart+Math.max(.9,Math.min(dur*.78,c.clapEnd-c.clapStart-1.3));
+      }
     }
   }
   function reactToShot(potCount, foul=false){
@@ -1378,7 +1392,7 @@
         ref.queue=[{s:loopNearest(pk.x,pk.z),x:pk.x,z:pk.z}];
         const dest=fetchType==='cue'?[BAULK_X-.15,0]:SPOTS[fetchType];
         ref.queue.push({s:loopNearest(dest[0],dest[1]),x:dest[0],z:dest[1]});
-        ref.task=null;ref.waitUntil=0;}
+        if(!kitTask(ref.task))ref.task=null;ref.waitUntil=0;}
     }
     if(kind==='cheer')sound('cheer',.82);
     else if(kind==='polite')sound('applause',.40);
@@ -1717,7 +1731,8 @@
     $('target-ball').className='target-ball '+(target||'white-target');
     if(state.freeBall){$('target-title').textContent='FREE BALL';$('target-subtitle').textContent='ANY BALL · PLAYS AS THE BALL ON';}
     const rl=$('remaining-line');if(rl){const behind=state.scores[0]<state.scores[1]?0:state.scores[1]<state.scores[0]?1:-1;
-      rl.hidden=state.mode==='practice';rl.innerHTML='REMAINING <b>'+pointsRemaining()+'</b>'+(behind>=0&&snookersNeeded(behind)?' <em>· '+playerName(behind)+' NEED'+(state.mode==='bot'&&behind===1?'S':'')+' SNOOKERS</em>':'');}
+      const nS=behind>=0?snookerCount(behind):0;
+      rl.hidden=state.mode==='practice';rl.innerHTML='REMAINING <b>'+pointsRemaining()+'</b>'+(nS?' <em>· '+playerName(behind)+' NEED'+(state.mode==='bot'&&behind===1||state.mode==='versus'?'S':'')+' '+nS+' SNOOKER'+(nS>1?'S':'')+'</em>':'');}
     const fs=$('frames-score');if(fs){const m=state.match;fs.textContent=state.mode==='practice'||m.bestOf===1?'VS':m.frames[0]+' · '+m.frames[1];fs.title=m.bestOf>1?'Frames · best of '+m.bestOf:'';}
     $('nomination-label').innerHTML=state.phase==='color'?'AUTO SELECT FROM AIM <span>· CLICK OVERRIDES</span>':state.phase==='red'?'POT A RED <span>· COLOURS NEXT</span>':'FINAL COLOURS <span>· IN ORDER</span>';
     $('ball-picker').hidden=true;
@@ -1759,7 +1774,9 @@
     if(state.started&&!state.finished&&state.break>=15&&state.break<=160){const k=nameCallKey(state.current);if(k)say([k,'n'+state.break],1.0);}
     state.break=0;if(state.mode==='versus'||state.mode==='bot')state.current=1-state.current;
     if(state.started&&!state.finished&&state.mode!=='practice'){const sc=state.snookCalled=state.snookCalled||[0,0];
-      if(!sc[state.current]&&snookersNeeded(state.current)>0){sc[state.current]=1;say(['snookers'],1.8);}}state.nominated=null;state.nominationManual=false;state.freeBall=false;ai.plan=null;ai.thinkUntil=0;}
+      const nS=snookerCount(state.current);
+      if(nS&&sc[state.current]!==nS){const first=!sc[state.current];sc[state.current]=nS;if(first)say(['snookers'],1.8);
+        setTimeout(()=>message('SNOOKERS REQUIRED',playerName(state.current)+' NEED'+(state.mode==='bot'&&state.current===0?'':'S')+' '+nS+' SNOOKER'+(nS>1?'S':'')+' · '+(state.scores[1-state.current]-state.scores[state.current])+' BEHIND, '+pointsRemaining()+' ON THE TABLE',3200),first?2100:300);}}state.nominated=null;state.nominationManual=false;state.freeBall=false;ai.plan=null;ai.thinkUntil=0;}
 
   // ---- RULES HELPERS (WPBSA-style) -------------------------------------------
   const playerName=i=>state.mode==='bot'?(i===0?'YOU':opponentFull()):state.mode==='versus'?(i===0?'PLAYER ONE':'PLAYER TWO'):'YOU';
@@ -1775,6 +1792,10 @@
     return redCount()*8+27+(state.phase==='color'?7:0);
   }
   const snookersNeeded=p=>state.scores[1-p]-state.scores[p]>pointsRemaining();
+  // How many snookers: each foul he forces is worth at least four (the value of the ball on, if that is
+  // more, once only the colours are left); drawing level is enough, as the black is then re-spotted.
+  const snookerCount=p=>{const d=state.scores[1-p]-state.scores[p]-pointsRemaining();if(d<=0)return 0;
+    const v=state.phase==='clearance'?Math.max(4,(COLOR_INFO[COLOR_ORDER[Math.min(5,state.clearanceIndex)]]||{score:4}).score):4;return Math.ceil(d/v);};
   // Straight path of the cue ball's centre to (x,z): is it blocked by a ball
   // that is NOT on? (Another ball on in the way is not a snooker.)
   function clearPath(cb,x,z,target,onTypes=[]){
@@ -2255,7 +2276,7 @@
   // the cue accelerating through the ball and the follow-through. The ball is
   // struck when the tip arrives; only the cue and the cue arm move.
   const stroke={on:false,t:0,byBot:false,plan:null,back:.1,from:0,power:.5};
-  let featherT=0,strikeAt=-9,followLen=.08;
+  let featherT=0,strikeAt=-9,followLen=.08,powerSeen=null,powerAt=-9;
   const strokeTimes=p=>({b:.4+.12*p,h:.11,f:.17-.08*p});
   const curFeather=()=>{const r=ai.routine;if(!r)return .026+.019*Math.sin(featherT*TAU/.9);
     const burst=.35+.65*Math.max(0,Math.sin(featherT*TAU/(r.period*4.6)+r.phase));return .024+r.amp*burst*Math.sin(featherT*TAU/r.period);};
@@ -2283,6 +2304,11 @@
       const u=Math.min(1,(t-T.b-T.h)/T.f);return stroke.back*(1-u*u);}
     if(state.inShot&&state.shot&&time-strikeAt<1.2)return -followLen*ease(Math.min(1,(time-strikeAt)/.12));
     if(!state.inShot&&state.mode==='bot'&&state.current===1&&PL[1]&&PL[1].act==='down')return curFeather();
+    if(!state.inShot&&humanTurn()&&PL[state.current]&&PL[state.current].act==='down'){
+      const p=clamp((shotSettings().power||40)/100,0,1);
+      if(powerSeen!==p){if(powerSeen!=null)powerAt=time;powerSeen=p;}
+      const u=time-powerAt,show=u<1.7?Math.min(sstep(0,.28,u),1-sstep(.95,1.6,u)):0;   // out to the backswing, a moment there, back
+      return lerp(.024+(.006+.016*p)*Math.sin(featherT*TAU/(1.2-.35*p)),.06+.12*p,show);}
     return 0;
   }
   function takeShot(byBot=false,plan=null){
@@ -2312,7 +2338,7 @@
       const nearest=POCKETS.map(p=>len2(b.x-p.x,b.z-p.z)).sort((a,b)=>a-b)[0];
       shotDifficulty=Math.max(0,(lineInfo.reach*.62+nearest*.55));
     }
-    state.shot={first:null,potted:[],cueScratch:false,followApplied:false,angle:state.aim,cueOrigin:[cue.x,cue.z],difficulty:shotDifficulty};
+    state.shot={first:null,potted:[],cueScratch:false,followApplied:false,angle:state.aim,cueOrigin:[cue.x,cue.z],difficulty:shotDifficulty,spin:[cfg.spinX||0,cfg.spinY||0]};
     Object.assign(state.shot,rulesCtx);state.touching=null;
     state.inShot=true;state.shotRest=0;state.shotCount++;state.cueAnimation=.25;strikeAt=time;
     state.history.length=Math.min(state.history.length,9);
@@ -2753,7 +2779,7 @@
   // "ooh" and the arena's murmur. Each table sound is chosen by impact speed,
   // panned to where it happens on screen, and partly sent through the arena
   // reverb. The referee's voice replaces the old score and foul beeps.
-  let audioBus=null,audioUnlocked=false,sfxState='',tableIn=null,ambience=null,ambTarget=-1;
+  let audioBus=null,audioUnlocked=false,sfxState='',tableIn=null,ambience=null,ambTarget=-1,ambSrc=null;
   let crowdLast=-9,crowdRank=0,crowdSrc=null,voicesActive=0;
   const sfxBuf={},sfxLastAt={},SFX=window.VELVET_SFX||null;
   function ensureAudio(){
@@ -2785,6 +2811,7 @@
       try{sfxBuf[k]=await ctx.decodeAudioData(b64Buffer(b64));}catch(e){console.warn('VELVET sound',k,e);}
     }));
     sfxState='ready';
+    loadUserSfx(ctx);   // and any sounds of your own (see YOUR OWN SOUNDS)
   }
   const soundSpot=new T.Vector3();
   // Stereo position and nearness of a table sound for the current camera.
@@ -2804,7 +2831,7 @@
     if(now-(sfxLastAt[fam]||0)<.007||voicesActive>16)return;
     sfxLastAt[fam]=now;
     let li=0;for(let i=1;i<L.length;i++)if(Math.abs(Math.log(v/L[i]))<Math.abs(Math.log(v/L[li])))li=i;
-    const takes=fam==='pocket'?4:fam==='click'?3:2,buf=sfxBuf[fam+'_'+li+'_'+Math.floor(Math.random()*takes)];
+    const takes=fam==='pocket'?4:fam==='click'?3:2,buf=ownSfx(fam)||sfxBuf[fam+'_'+li+'_'+Math.floor(Math.random()*takes)];
     if(!buf)return;
     const [pan,near]=soundPlace(x,z);
     const strength=fam==='pocket'?.55+.45*clamp(v/1.5,0,1):Math.pow(L[li]/L[L.length-1],.6)*Math.pow(clamp(v/L[li],.25,3),.85);
@@ -2823,7 +2850,7 @@
     const key=type==='frame'?'applause_frame':type==='cheer'?'applause_big':type==='applause'?'applause_polite':'ooh';
     const rank={ooh:1,applause_polite:2,applause_big:3,applause_frame:4}[key],now=ctx.currentTime;
     if(now-crowdLast<2.2&&rank<=crowdRank)return;
-    const buf=sfxBuf[key];if(!buf)return;
+    const buf=ownSfx(key)||sfxBuf[key];if(!buf)return;
     if(crowdSrc&&now-crowdLast<2.2){try{crowdSrc.g.gain.setTargetAtTime(0,now,.12);crowdSrc.s.stop(now+.6);}catch(e){}}
     crowdLast=now;crowdRank=rank;
     const s=ctx.createBufferSource(),g=ctx.createGain();
@@ -2835,9 +2862,9 @@
   // while a frame is in progress (as in a real arena).
   function updateAmbience(){
     if(sfxState!=='ready'||!audioContext)return;
-    if(!ambience&&sfxBuf.murmur){
+    if(!ambience&&(ownSfx('murmur')||sfxBuf.murmur)){
       const s=audioContext.createBufferSource(),g=audioContext.createGain();
-      s.buffer=sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(audioBus);s.start();ambience=g;
+      s.buffer=ownSfx('murmur')||sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(audioBus);s.start();ambience=g;ambSrc=s;
     }
     if(!ambience)return;
     const target=!state.sound?0:(!state.started||state.finished||isAnyOverlayOpen())?.2:.02;
@@ -3029,9 +3056,10 @@
       }
       const aim=striking?state.shot.angle:human?state.aim:(ai.plan?botAimNow():state.aim);
       const pull=cuePull();
-      const dx=Math.cos(aim),dz=Math.sin(aim),elev=.07,tip=R+.009+pull;
+      const [sl,su]=tipSpot(striking?(state.shot.by??state.current):state.current),deep=Math.sqrt(Math.max(R*R-sl*sl-su*su,0));
+      const dx=Math.cos(aim),dz=Math.sin(aim),elev=.07,tip=deep+.009+pull;   // the tip meets the ball where the spin is set
       cueGroup.visible=true;
-      cueGroup.position.set(cue.x-dx*tip,BALL_Y+.004,cue.z-dz*tip);
+      cueGroup.position.set(cue.x-dx*tip-dz*sl,BALL_Y+su,cue.z-dz*tip+dx*sl);
       cueGroup.quaternion.setFromUnitVectors(UP,new T.Vector3(-dx*Math.cos(elev),Math.sin(elev),-dz*Math.cos(elev)));
     }
     for(let i=rings;i<ringPool.length;i++)ringPool[i].visible=false;
@@ -3083,9 +3111,20 @@
   }
 
   // ---- INPUT, MENUS AND ACCESSIBILITY --------------------------------------
-  let draggingOrbit=false,dragPointer=null,lastDragX=0,lastDragY=0,cueDragPointer=null;
+  let draggingOrbit=false,dragPointer=null,lastDragX=0,lastDragY=0,cueDragPointer=null,panDrag=null;
+  // The free camera: no automatic direction, the view stays where you leave it.
+  function freeCam(){setAutoCamera(false);cam.follow=false;cam.mode=-1;cameraLabel('FREE CAMERA','◎');}
+  // Pan: the point the camera looks at moves with the mouse, in the plane of the picture (sideways, up and down).
+  const _pr=new T.Vector3(),_pu=new T.Vector3();
+  function panCamera(dx,dy){
+    freeCam();
+    const r=distFor(cam.curRadius,cam.curFov)*cam.curZoom,k=2*Math.tan(cam.curFov*PI/360)*r/Math.max(1,height);   // metres per pixel at the target
+    camera.updateMatrixWorld();_pr.setFromMatrixColumn(camera.matrixWorld,0);_pu.setFromMatrixColumn(camera.matrixWorld,1);
+    const lim=[[-HX-4,HX+4],[FLOOR_Y,FLOOR_Y+4.5],[-HZ-4,HZ+4]],m=[-dx*k*_pr.x+dy*k*_pu.x,-dx*k*_pr.y+dy*k*_pu.y,-dx*k*_pr.z+dy*k*_pu.z];
+    for(let j=0;j<3;j++){const v=clamp(cam.target[j]+m[j],lim[j][0],lim[j][1]);cam.curTarget[j]+=v-cam.target[j];cam.target[j]=v;}
+  }
   function activeOverlay(id,active){$(id).classList.toggle('active',active);}
-  function isAnyOverlayOpen(){return ['welcome-screen','help-screen','menu-screen','end-screen','decision-screen','tournament-screen'].some(id=>$(id).classList.contains('active'));}
+  function isAnyOverlayOpen(){return ['welcome-screen','help-screen','menu-screen','end-screen','decision-screen','tournament-screen','sounds-screen'].some(id=>$(id).classList.contains('active'));}
   const spinPad=$('spin-pad');
   function spinFromEvent(ev){const rect=spinPad.getBoundingClientRect();const x=(ev.clientX-rect.left-rect.width/2)/(rect.width*.39),y=-(ev.clientY-rect.top-rect.height/2)/(rect.height*.39);setSpin(x,y);}
   spinPad.addEventListener('pointerdown',ev=>{
@@ -3263,10 +3302,11 @@
   function careerLoad(){try{return JSON.parse(localStorage.getItem('velvet.career')||'null')||{events:0,titles:0,finals:0,earnings:0};}catch(e){return{events:0,titles:0,finals:0,earnings:0};}}
   const tourName=id=>id==='you'?'YOU':((OPPONENTS.find(o=>o.id===id)||{}).name||'—').toUpperCase();
   const tourUserMatch=t=>t&&!t.done&&t.rounds[t.round]?t.rounds[t.round].find(m=>!m.w&&(m.a==='you'||m.b==='you')):null;
+  // A new event: fifteen of the players there are (every opponent, and players made in VELVET Studio),
+  // drawn at random, and you, anywhere in the draw; no two events alike.
   function tourNew(format,level){
-    const pool=TOUR_FIELD.slice(8).concat('you');
-    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    const draw=DRAW_ORDER.map(s=>s<=8?TOUR_FIELD[s-1]:pool.pop());
+    const draw=tourField(true).concat('you');
+    for(let i=draw.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[draw[i],draw[j]]=[draw[j],draw[i]];}
     const t={v:1,name:VENUES[venueId].event,venue:venueId,format,level,round:0,current:null,done:false,champion:null,out:null,rounds:[[],[],[],[]]};
     for(let i=0;i<16;i+=2)t.rounds[0].push({a:draw[i],b:draw[i+1],fa:0,fb:0,w:null});
     return t;
@@ -3386,9 +3426,16 @@
     newRack(true);message(m.frames[0]+m.frames[1]?'FRAME '+(m.frames[0]+m.frames[1]+1):'NEW FRAME',state.mode==='practice'?'GOOD LUCK AT THE TABLE':playerName(state.current)+' TO BREAK OFF');});
   ['menu-screen','help-screen'].forEach(id=>$(id).querySelector('.overlay-backdrop').addEventListener('click',()=>activeOverlay(id,false)));
   canvas.addEventListener('contextmenu',ev=>ev.preventDefault());
+  canvas.addEventListener('mousedown',ev=>{if(ev.button===1)ev.preventDefault();});   // (no auto-scroll on a middle drag)
   canvas.addEventListener('pointerdown',ev=>{
     if(isAnyOverlayOpen()||!state.started)return;
-    if(ev.button===0&&(focusPicking||ev.shiftKey)){
+    // Shift + middle or left drag moves the camera sideways and up and down, Ctrl + middle drag zooms, as in
+    // Blender; a Shift + click that does not move still picks a focus point on the table.
+    if((ev.shiftKey&&(ev.button===1||ev.button===0))||(ev.ctrlKey&&ev.button===1)){
+      panDrag={id:ev.pointerId,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,moved:false,b:ev.button,zoom:!ev.shiftKey};
+      canvas.setPointerCapture(ev.pointerId);ev.preventDefault();return;
+    }
+    if(ev.button===0&&focusPicking){
       const point=screenToTable(ev.clientX,ev.clientY);
       if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + CLICK ANOTHER LOCATION TO REFOCUS',1550);}
       return;
@@ -3422,6 +3469,12 @@
   });
   canvas.addEventListener('pointerleave',()=>{aimMoveX=null;});
   canvas.addEventListener('pointermove',ev=>{
+    if(panDrag&&panDrag.id===ev.pointerId){
+      const dx=ev.clientX-panDrag.x,dy=ev.clientY-panDrag.y;panDrag.x=ev.clientX;panDrag.y=ev.clientY;
+      if(!panDrag.moved&&Math.hypot(ev.clientX-panDrag.x0,ev.clientY-panDrag.y0)>4)panDrag.moved=true;
+      if(panDrag.moved){if(panDrag.zoom){cam.zoom=clamp(cam.zoom*Math.exp(dy*.006),.25,2.4);cam.curZoom=cam.zoom;freeCam();}else panCamera(dx,dy);}
+      return;
+    }
     if(draggingOrbit&&dragPointer===ev.pointerId){
       const dx=ev.clientX-lastDragX,dy=ev.clientY-lastDragY;lastDragX=ev.clientX;lastDragY=ev.clientY;
       cam.az-=dx*.007;cam.el=clamp(cam.el+dy*.006,.24,1.558);cam.mode=-1;cam.follow=false;
@@ -3446,6 +3499,10 @@
     }
   });
   const releaseDrag=ev=>{
+    if(panDrag&&panDrag.id===ev.pointerId){const d=panDrag;panDrag=null;
+      if(!d.moved&&d.b===0){const point=screenToTable(ev.clientX,ev.clientY);
+        if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + DRAG TO MOVE THE CAMERA · SHIFT + CLICK TO REFOCUS',1800);}}
+      return;}
     if(dragPointer===ev.pointerId){draggingOrbit=false;dragPointer=null;}
     if(cueDragPointer===ev.pointerId){cueDragPointer=null;refreshUI();message('CUE BALL PLACED','AIM AT THE BALL ON',1300);}
   };
@@ -3460,6 +3517,7 @@
     const tag=document.activeElement?.tagName;if(tag==='INPUT'&&ev.key!=='Escape')return;
     if(ev.key==='Escape'){
       ev.preventDefault();if($('help-screen').classList.contains('active'))activeOverlay('help-screen',false);
+      else if($('sounds-screen')&&$('sounds-screen').classList.contains('active'))activeOverlay('sounds-screen',false);
       else if($('welcome-screen').classList.contains('active'))return;
       else activeOverlay('menu-screen',!$('menu-screen').classList.contains('active'));return;
     }

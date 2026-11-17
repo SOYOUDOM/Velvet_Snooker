@@ -9,6 +9,28 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
 
+## Changes in version 6.9 (people who move like people, real rests, your own sounds)
+
+- **People never walk through each other or the furniture.** Paths are planned on a map of the floor (A*), round the table, both chairs and the legs of whoever sits in one, the drinks table, the trophy, the TV cameras and objects placed in VELVET Studio. Walkers look ahead and steer round each other (by the right when they meet head on). Someone standing in the way steps aside, and the referee stands off and waits while a player crosses. What overlap is left is pushed apart.
+- **No more spinning round before a shot.** Turns always go the short way, and while you swing the aim round your player waits for it to settle instead of chasing it round the table.
+- **Getting up and sitting down.** A player leans forward over his feet and pushes up off the arm of the chair, the cue steadying him; he sits down the same way in reverse.
+- **Getting down on a shot.** Feet first, then the cue arm and bridge hand as the back bends, the head last. The bridge hand's V and the cue hand's fist are measured every frame and moved onto the cue, so the cue lies in the bridge and runs through the fist on every body.
+- **The cue in his hand.** Carried, the hand turns to hold the cue, so cue and hand move as one in the same frame: no lag, no flips. The tip addresses the cue ball where the spin is set (high for top, low for screw, to the side for side). Down on your shot the cue feathers more the harder you set the power, and changing the power draws it back as far as that power will take it.
+- **The rest and the butt extension.** When the cue ball is out of reach the player asks for the rest; the referee fetches it from its hooks under the baulk end, walks it over and hands it to him (both reach for it), and takes it back afterwards. For long shots the player takes a screw-on extension from his pocket and screws it onto the butt (and off again).
+- **More life between shots.** Players chalk their cues, lean on them, rub their chins, look round the room. The bot sometimes chalks before getting down. Reactions after a shot now actually play (they never did before). Walk-on greetings and replay celebrations are chosen fresh each time (a wave, a bow, the cue raised to the room, a fist pump, a nod), and the walk-on cameras vary.
+- **The crowd.** Idle and clapping motions loop without jumping back to their first pose. A cheer plays once and runs on into clapping, eased in and out. Every reaction (replays included) picks who reacts, how soon, how long, which motion and how fast, fresh each time.
+- **Faces.** Eyelids follow the eyes down only a little, so a player looking at the table no longer seems to have his eyes shut.
+- **See-through done cleanly.** A person fading out of the way (the referee between the camera and a ball, a player the camera is too close to) and the smart rail fade now lay down their depth first and blend their colour over it: evenly see-through, never the inside of a coat or the far side of a rail, and no more dotted dither.
+- **The panels keep clear of the balls.** Every overlay (scoreboard, match panel, controls, dock, captions, the SKIP button, hints) fades almost away while any ball is behind it, and the picture is framed in the space between the side panels.
+- **Camera: pan like Blender.** Shift + middle drag or Shift + left drag moves the camera sideways and up or down; Ctrl + middle drag zooms. A Shift + click that does not move still picks a focus point.
+- **Snookers required.** The match panel says how many (each forced foul is worth at least four, or the value of the ball on when only colours are left), and a message tells the player at the table.
+- **Tournaments are drawn at random** from all the players there are (opponents and players made in VELVET Studio), with you anywhere in the draw.
+- **Commentary with feeling.** Big shots, big breaks and frames won come quicker, higher, louder and brighter, often after a quick "Oh, yes!" or "Superb!"; a fluke more so; a miss, a ball in the jaws or an in-off comes lower, slower and duller, often after an "Ooh..." or "Oh dear."; tense moments are hushed.
+- **Your own sounds.** SOUNDS in the scene controls: replace any sound effect (ball on ball, cue, cushion, pocket, three kinds of applause, the crowd's "ooh", the arena murmur) with a file of your own. It is kept in this browser only; RESET brings back the built-in sound.
+- **Pockets with chrome ball-return rails.** Under each pocket a wire basket drops the ball onto a chrome rail that turns along the side of the table and runs down to a U-bend, where the balls wait in a line. Real contact physics, as before; the referee takes colours off the rail.
+- **Relief on every person.** Each body and face now has a normal map made from its own texture (folds and creases, seams, buttons, the weave of a waistcoat), so clothes catch the light instead of looking printed on.
+- **Tools.** `tools/make_normals.py` makes the normal maps; `tools/test_people.py` and `tools/test_tournament.py` check the new behaviour.
+
 ## Changes in version 6.8 (the classic people are back, with faces that move)
 
 - **The classic players and referees are back by default.** Next to the original models, the MPFB bodies from 6.7 looked plain and boxy. They are now an option: **PEOPLE · CLASSIC / MPFB** in the settings (CLASSIC unless you switch). The game only reads `characters/hd.js` when MPFB is on, so it also starts faster.
@@ -545,7 +567,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 - `css/style.css` — styles
 - `js/three.bundle.js` — Three.js r187 and add-ons (MIT)
 - `characters/characters.js` — the people data file: which models and textures are used, and their roles
-- `characters/models`, `characters/textures`, `characters/animations` — the people as .glb models, texture images and motion clips
+- `characters/models`, `characters/textures`, `characters/animations` — the people as .glb models, texture images (with a `_normal` relief map for each body and face) and motion clips
 - `characters/characters-pack.js` — the same files packed, for opening the game straight from disk
 - `Pack Characters.html` — rebuilds the pack after you change or add characters by hand in characters.js
 - `VELVET Studio.html`, `js/studio.js`, `js/studio-tex.js`, `css/studio.css` — the character studio

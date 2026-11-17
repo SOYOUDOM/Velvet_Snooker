@@ -1,61 +1,76 @@
-  // ---- POCKET NETS: brass ring, white net and the rod catcher --------------
-  // A potted ball drops through the pocket into a white net lying in a cradle
-  // of black rods, rolls down to the low end and waits there with the others.
-  // Real 3D contact physics (gravity, the rods as capsules, ball-ball impacts);
-  // nothing is scripted. The referee takes colours out of the pocket they fell
-  // into, and empties the reds from a pocket when it fills up.
+  // ---- POCKET RAILS: brass ring, wire basket and the chrome ball-return rail
+  // A potted ball drops through the pocket into a wire basket, out of its
+  // bottom onto a chrome rail (two tubes it rides on, two above to keep it
+  // there) that turns along the side of the table under the cushion rail and
+  // runs gently down to a U-bend, where it waits with the others. Real 3D
+  // contact physics (gravity, the tubes as capsules, ball-ball impacts);
+  // nothing is scripted. The referee takes colours off the rail of the pocket
+  // they fell into, and clears the reds from a rail when it fills up.
   const TRAY_X=-(HX+.045),TRAY_Y=-.452;          // the old ball tray (kept for older callers)
-  const railCaps=[],dropTubes=[],NET_CRADLES=[],ROD_R=.0055;
+  const railCaps=[],dropTubes=[],NET_CRADLES=[],ROD_R=.0062;
   (function buildCradles(){
     POCKETS.forEach((p,pid)=>{
-      const ox=p.ux,oz=p.uz,lx=-oz,lz=ox;           // outward, and across
-      const ringY=CLOTH_Y-.05,ringR=p.radius+.006,s0=.035,s1=p.corner?.3:.26,y0=ringY-.13,y1=ringY-.165;
-      const P=(s,y,l=0)=>[p.x+ox*s+lx*l,y,p.z+oz*s+lz*l];
-      dropTubes.push({x:p.x,z:p.z,bx:p.x+ox*.03,bz:p.z+oz*.03,top:CLOTH_Y-.02,bottom:y0+.03,r:p.radius+.004});
-      for(const sg of [-1,1]){
-        railCaps.push({a:P(s0-.03,y0-.004,.017*sg),b:P(s1,y1,.017*sg),r:ROD_R,sup:true});   // the two rods a ball rides on
-        railCaps.push({a:P(s0-.03,y0+.04,.045*sg),b:P(s1,y1+.04,.045*sg),r:ROD_R});         // the net's sides
+      const sz=Math.sign(p.z)||1,al=p.corner?-Math.sign(p.x):1;          // along the side: from a corner toward the middle; from a middle pocket toward the top
+      const ringY=CLOTH_Y-.05,ringR=p.radius+.006,y0=ringY-.15,zr=sz*(OUT_Z+.058),L=p.corner?.47:.42;
+      // the line a ball's centre follows (sitting on the two lower tubes): under the pocket, out past the
+      // table's body, round the bend and along to the end
+      // straight out from under the pocket, a wide quarter turn (so the tubes on the inside of the bend never
+      // pinch the ball), then along the side, sloping down all the way
+      const Rb=.09,flat=[[p.x,p.z-sz*.02],[p.x,p.z]],zt=zr-sz*Rb;
+      flat.push([p.x,(p.z+zt)/2],[p.x,zt]);
+      for(let k=1;k<=5;k++){const a=k/5*PI/2;flat.push([p.x+al*Rb*(1-Math.cos(a)),zt+sz*Rb*Math.sin(a)]);}
+      flat.push([p.x+al*(Rb+.08),zr],[p.x+al*L,zr]);
+      let run=0;const lens=flat.map((q,k)=>k?(run+=Math.hypot(q[0]-flat[k-1][0],q[1]-flat[k-1][1])):0),turnEnd=lens[8],total=lens[lens.length-1];
+      const line=flat.map((q,k)=>{const d=Math.max(0,lens[k]-lens[1]),te=turnEnd-lens[1];
+        return[q[0],k===0?y0+.003:d<=te?y0-.036*d/te:y0-.036-.036*(d-te)/(total-turnEnd),q[1]];});
+      const A=line[1],E=line[line.length-1],B=line[8];
+      // each point's sideways direction (half way between its two segments)
+      const side=line.map((q,k)=>{const a=line[Math.max(0,k-1)],b=line[Math.min(line.length-1,k+1)],dx=b[0]-a[0],dz=b[2]-a[2],l=Math.hypot(dx,dz)||1;return[-dz/l,dx/l];});
+      const off=(k,l,dy)=>[line[k][0]+side[k][0]*l,line[k][1]+dy,line[k][2]+side[k][1]*l];
+      dropTubes.push({x:p.x,z:p.z,bx:p.x+(B[0]-A[0])*.15,bz:p.z+(B[2]-A[2])*.15,top:CLOTH_Y-.02,bottom:y0+.04,r:p.radius+.004});
+      const tubes=[];
+      for(const [l,dy,sup] of [[-.0175,-R-.002,true],[.0175,-R-.002,true],[-.039,.012,false],[.039,.012,false]]){
+        const pts=line.map((q,k)=>off(k,l,dy));tubes.push({pts,sup,l,dy});
+        for(let k=0;k+1<pts.length;k++)railCaps.push({a:pts[k],b:pts[k+1],r:ROD_R,sup});
       }
-      railCaps.push({a:P(s1+.005,y1+.012,-.05),b:P(s1+.005,y1+.012,.05),r:.012});           // the end plate
-      railCaps.push({a:P(-.04,y0-.004,-.05),b:P(-.04,y0-.004,.05),r:.012});                 // the back of the bag
-      NET_CRADLES.push({pid,end:P(s1-.04,y1+.03),ringY,ringR,s0,s1,y0,y1,P,corner:p.corner});
+      const ex=E[0]+al*.016,dz=sz;   // the end: the lower tubes meet in a U, a bar across stops the balls
+      railCaps.push({a:[ex,E[1]+.006,zr-.05],b:[ex,E[1]+.006,zr+.05],r:.011});
+      const bk=line[0];railCaps.push({a:[bk[0]-side[0][0]*.06,bk[1]-.004,bk[2]-side[0][1]*.06],b:[bk[0]+side[0][0]*.06,bk[1]-.004,bk[2]+side[0][1]*.06],r:.012});   // the back of the basket
+      NET_CRADLES.push({pid,end:[E[0]-al*.045,E[1]+.02,zr],ringY,ringR,y0,y1:E[1],line,tubes,al,zr,corner:p.corner});
     });
   })();
-  // Visuals: brass ring, see-through net bag, black rods, end plate, strap.
+  // Visuals: the brass ring, a wire basket under it, chrome tubes with a U at the end and caps on the upper
+  // tubes, small brackets holding the rail to the table.
   (()=>{
     const netTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
-      g.strokeStyle='#ffffff';g.lineWidth=7;g.lineCap='round';
+      g.strokeStyle='#ffffff';g.lineWidth=5;g.lineCap='round';
       for(let k=-128;k<=256;k+=32){g.beginPath();g.moveTo(k,0);g.lineTo(k+128,128);g.stroke();g.beginPath();g.moveTo(k,128);g.lineTo(k+128,0);g.stroke();}
-      g.fillStyle='#ffffff';for(let y=0;y<=128;y+=32)for(let x=0;x<=128;x+=32){g.beginPath();g.arc(x,y,6,0,TAU);g.fill();g.beginPath();g.arc(x+16,y+16,6,0,TAU);g.fill();}
       const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=maxAniso;t.colorSpace=T.SRGBColorSpace;return t;})();
-    const netMat=new T.MeshStandardMaterial({map:netTex,alphaTest:.42,side:T.DoubleSide,color:'#f2eee4',roughness:.92});
-    const rodMat=new T.MeshPhysicalMaterial({color:'#0b0b0c',roughness:.18,metalness:.5,clearcoat:.8,clearcoatRoughness:.1});
+    const netMat=new T.MeshStandardMaterial({map:netTex,alphaTest:.42,side:T.DoubleSide,color:'#e9ebee',roughness:.35,metalness:.75});
+    const rodMat=new T.MeshPhysicalMaterial({color:'#e6e8eb',roughness:.12,metalness:1,clearcoat:.6,clearcoatRoughness:.08});
     const strapMat=new T.MeshStandardMaterial({color:'#121112',roughness:.55});
-    const nets=[],rods=[],brass=[],straps=[],V=(a)=>new T.Vector3(a[0],a[1],a[2]);
-    for(const c of NET_CRADLES){const p=POCKETS[c.pid],{P,ringY,ringR,s0,s1,y0,y1}=c,lx=-p.uz,lz=p.ux;
+    const nets=[],rods=[],brass=[],chrome=[],V=(a)=>new T.Vector3(a[0],a[1],a[2]);
+    for(const c of NET_CRADLES){const p=POCKETS[c.pid],{ringY,ringR,y0,line,tubes,al,zr}=c;
       brass.push(new T.TorusGeometry(ringR,.0042,10,56).rotateX(PI/2).translate(p.x,ringY,p.z));
-      // the bag: a sock swept along its centreline, round at the ring, an oval lying in the cradle, closed at the end
-      const path=new T.CatmullRomCurve3([V(P(0,ringY+.004)),V(P(.012,ringY-.06)),V(P(s0+.02,y0+.03)),V(P((s0+s1)/2,(y0+y1)/2+.03)),V(P(s1-.004,y1+.03))]);
-      const N=34,M=22,pos=[],uv=[],idx=[],L=new T.Vector3(lx,0,lz);let arc=0,prev=null;
-      for(let j=0;j<=N;j++){const t=j/N,o=path.getPointAt(t),tg=path.getTangentAt(t),B=new T.Vector3().crossVectors(tg,L).normalize();
-        if(prev)arc+=o.distanceTo(prev);prev=o;
-        const w=t<.3?lerp(ringR,.05,t/.3):t>.9?lerp(.05,.008,(t-.9)/.1):.05,h=t<.3?lerp(ringR,.031,t/.3):t>.9?lerp(.031,.008,(t-.9)/.1):.031;
-        for(let i=0;i<=M;i++){const a=i/M*TAU,sag=Math.sin(a)<0?1.12:1;
-          pos.push(o.x+L.x*Math.cos(a)*w+B.x*Math.sin(a)*h*sag,o.y+L.y*Math.cos(a)*w+B.y*Math.sin(a)*h*sag,o.z+L.z*Math.cos(a)*w+B.z*Math.sin(a)*h*sag);
-          uv.push(i/M*7,arc/.034);}}
-      for(let j=0;j<N;j++)for(let i=0;i<M;i++){const a=j*(M+1)+i,b=a+M+1;idx.push(a,b,a+1,a+1,b,b+1);}
-      const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();nets.push(g);
-      // rods: from the ring down into the cradle and out to the end plate
-      for(const [l,dy] of [[-.017,-.004],[.017,-.004],[-.045,.04],[.045,.04]]){
-        const be=(dy<0?62:108)*PI/180*Math.sign(l),ra=[p.x+(p.ux*Math.cos(be)+lx*Math.sin(be))*ringR,ringY,p.z+(p.uz*Math.cos(be)+lz*Math.sin(be))*ringR];
-        const curve=new T.CatmullRomCurve3([V(ra),V(P(s0-.032,ringY-.07,l*.9)),V(P(s0-.03,y0+dy,l)),V(P(s1,y1+dy,l))]);
-        rods.push(new T.TubeGeometry(curve,48,ROD_R,8,false));
-        brass.push(new T.SphereGeometry(.0075,12,8).translate(...P(s1+.011,y1+dy,l)));}
-      const plate=new T.BoxGeometry(.006,.06,.11);plate.rotateY(-Math.atan2(p.uz,p.ux));plate.translate(...P(s1+.006,y1+.018));brass.push(plate);
+      // the basket: a wire cylinder from the ring down to the rail, a chrome hoop at its foot
+      const bh=ringY-(y0+.012),bas=new T.CylinderGeometry(ringR+.002,ringR-.004,bh,40,1,true);
+      const uv=bas.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*9,uv.getY(i)*bh/.034);
+      nets.push(bas.translate(p.x,ringY-bh/2,p.z));
+      chrome.push(new T.TorusGeometry(ringR-.004,.0035,8,40).rotateX(PI/2).translate(p.x,y0+.012,p.z));
+      // the tubes, smooth through the bends
+      for(const t of tubes){const curve=new T.CatmullRomCurve3(t.pts.map(V),false,'centripetal',.5);rods.push(new T.TubeGeometry(curve,72,ROD_R,10,false));
+        if(!t.sup)chrome.push(new T.SphereGeometry(ROD_R*1.35,12,8).translate(...t.pts[t.pts.length-1]),new T.SphereGeometry(ROD_R*1.35,12,8).translate(...t.pts[0]));}
+      // the U at the end of the lower tubes, and the stop bar across
+      const lo=tubes.filter(t=>t.sup),a=lo[0].pts[lo[0].pts.length-1],b=lo[1].pts[lo[1].pts.length-1],mid=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2],r=Math.hypot(a[0]-b[0],a[2]-b[2])/2;
+      const u=new T.TorusGeometry(r,ROD_R,10,24,PI);u.rotateX(PI/2);u.rotateY(al>0?PI/2:-PI/2);u.translate(...mid);rods.push(u);
+      const hi=tubes.filter(t=>!t.sup),h1=hi[0].pts[hi[0].pts.length-1],h2=hi[1].pts[hi[1].pts.length-1];
+      const bar=new T.CylinderGeometry(.0045,.0045,Math.hypot(h1[0]-h2[0],h1[2]-h2[2]),10);bar.rotateX(PI/2);bar.translate((h1[0]+h2[0])/2+al*.004,(h1[1]+h2[1])/2-.012,(h1[2]+h2[2])/2);chrome.push(bar);
+      // brackets: from the rail up to the underside of the table, at the bend and near the end
+      for(const k of [8,line.length-1]){const q=line[k],top=CLOTH_Y-.07,y=q[1]+.03;const br=new T.CylinderGeometry(.004,.004,top-y,8);br.translate(q[0]-al*(k>8?.05:0),(top+y)/2,q[2]-Math.sign(zr)*.046);chrome.push(br);}
     }
-    const add=(list,mat,shadow)=>{if(!list.length)return;const m=new T.Mesh(T.BufferGeometryUtils.mergeGeometries(list.map(g=>g.index?g.toNonIndexed():g)),mat);m.castShadow=shadow;m.receiveShadow=true;m.userData.vxObj='nets';scene.add(m);return m;};
-    vxKey(netMat,'nets.net','Nets');vxKey(rodMat,'nets.rods','Net rods');vxKey(strapMat,'nets.straps','Net straps');
-    const netMesh=add(nets,netMat,false);add(rods,rodMat,true);add(brass,goldMat,true);if(netMesh){netMesh.userData.vxRole='CLOTH';netMesh.name='NETS';}
+    const add=(list,mat,shadow)=>{if(!list.length)return;const m=new T.Mesh(T.BufferGeometryUtils.mergeGeometries(list.map(g=>{g=g.index?g.toNonIndexed():g;for(const k of Object.keys(g.attributes))if(!['position','normal','uv'].includes(k))g.deleteAttribute(k);return g;})),mat);m.castShadow=shadow;m.receiveShadow=true;m.userData.vxObj='nets';scene.add(m);return m;};
+    vxKey(netMat,'nets.net','Pocket baskets');vxKey(rodMat,'nets.rods','Ball-return rails');vxKey(strapMat,'nets.straps','Net straps');
+    const netMesh=add(nets,netMat,false);add(rods,rodMat,true);add(chrome,rodMat,true);add(brass,goldMat,true);if(netMesh){netMesh.userData.vxRole='CLOTH';netMesh.name='NETS';}
   })();
   // Physics step for balls in the nets.
   const _cp=[0,0,0];

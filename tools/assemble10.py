@@ -13,7 +13,7 @@ def rep(text, old, new, label):
 js = (V / 'js/game.js').read_text()
 js = rep(js, '  // ---- TABLE & ARENA SOUND', (N / 'r_commentary.js').read_text() + '\n  // ---- TABLE & ARENA SOUND', 'commentary module')
 js = rep(js, "  function finishShot(){state.shot=null;",
-         "  function finishShot(){try{reactToShot(state.shot);commAfterShot(state.shot);}catch(e){console.warn('VELVET commentary:',e);}state.shot=null;", 'after shot')
+         "  function finishShot(){try{playerReactToShot(state.shot);commAfterShot(state.shot);}catch(e){console.warn('VELVET commentary:',e);}state.shot=null;", 'after shot')
 js = rep(js, "    Object.assign(state.shot,rulesCtx);state.touching=null;",
          "    Object.assign(state.shot,rulesCtx);state.touching=null;\n"
          "    Object.assign(state.shot,{by:state.current,kind:byBot&&plan?plan.kind:null,target:byBot&&plan&&plan.target?plan.target.id:null,breakBefore:state.break,reds0:redSpread(),wasSnookered:snookeredOnAll(onTypes)});", 'shot meta')
@@ -41,10 +41,10 @@ js = rep(js, "  newRack(false);resize();applyQuality();startPeople();requestAnim
          (N / 'w_objects.js').read_text() + "  newRack(false);resize();applyQuality();startPeople();requestAnimationFrame(frame);\n  objectsBoot();\n})();", 'objects studio')
 js = rep(js, "    tableIn.connect(audioBus);", "    tableIn.gain.value=mix.table;\n    tableIn.connect(audioBus);", 'mix table')
 js = rep(js, "s.connect(g);g.connect(audioBus);s.start(now+.05);crowdSrc={s,g};", "s.connect(g);g.connect(crowdBus(ctx));s.start(now+.05);crowdSrc={s,g};", 'mix crowd 1')
-js = rep(js, "s.buffer=sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(audioBus);", "s.buffer=sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(crowdBus(audioContext));", 'mix crowd 2')
+js = rep(js, "s.buffer=ownSfx('murmur')||sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(audioBus);", "s.buffer=ownSfx('murmur')||sfxBuf.murmur;s.loop=true;g.gain.value=0;s.connect(g);g.connect(crowdBus(audioContext));", 'mix crowd 2')
 js = rep(js, "    input.connect(dry);input.connect(conv);", "    input.gain.value=mix.ref;refIn=input;\n    input.connect(dry);input.connect(conv);", 'mix referee')
 js = rep(js, "const g=ctx.createGain(),hp=ctx.createBiquadFilter(),pr=ctx.createBiquadFilter();g.gain.value=.85;", "const g=ctx.createGain(),hp=ctx.createBiquadFilter(),pr=ctx.createBiquadFilter();g.gain.value=.85*mix.comm;", 'mix commentary')
-js = rep(js, "  // ---- TABLE & ARENA SOUND", (N / 'u_settings.js').read_text() + (N / 'x_faces.js').read_text() + "  // ---- TABLE & ARENA SOUND", 'settings module + HD faces')
+js = rep(js, "  // ---- TABLE & ARENA SOUND", (N / 'u_settings.js').read_text() + (N / 'v_sounds.js').read_text() + (N / 'x_faces.js').read_text() + "  // ---- TABLE & ARENA SOUND", 'settings module + HD faces')
 js = rep(js, "updatePlayers(dt);updateOcclusion(dt);", "updatePlayers(dt);facesTick(dt);updateOcclusion(dt);", 'faces in the loop')
 (V / 'js/game.js').write_text(js)
 print('step 10 ok', len(js))

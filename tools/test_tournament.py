@@ -1,4 +1,4 @@
-"""Tournament flow: start screen, seeded draw, playing and winning every round
+"""Tournament flow: start screen, a random draw of the existing players, playing and winning every round
 (frames finished via the game's own finishFrame), losing, career totals,
 and resuming a match after a page reload.
 
@@ -33,7 +33,9 @@ def main():
         t = pg.evaluate("__T.tourLoad()")
         out['draw'] = [(m['a'], m['b']) for m in t['rounds'][0]]
         out['draw_checks'] = {'you_once': sum(1 for m in t['rounds'][0] for x in (m['a'], m['b']) if x == 'you') == 1,
-                              'seed1_top': t['rounds'][0][0]['a'] == 'trump', 'seed2_bottom': t['rounds'][0][7]['a'] == 'zhao',
+                              'distinct': len({x for m in t['rounds'][0] for x in (m['a'], m['b'])}) == 16,
+                              'real_players': pg.evaluate("ids=>ids.every(id=>id==='you'||__T.OPPONENTS.some(o=>o.id===id))", [x for m in t['rounds'][0] for x in (m['a'], m['b'])]),
+                              'shuffled': pg.evaluate("()=>{const a=[0,1,2,3].map(()=>JSON.stringify(__T.tourNew('quick','easy').rounds[0]));return new Set(a).size>1;}"),
                               'format': t['format'], 'level': t['level']}
         if len(sys.argv) > 2:
             pg.evaluate("()=>{window.__noRender=false}"); pg.wait_for_timeout(1200)

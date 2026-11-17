@@ -97,6 +97,23 @@
   }
   const findBone = (root, exact, re) => root.getObjectByName(exact) || (() => { let hit = null; root.traverse((o) => { if (!hit && o.isBone && re.test(o.name)) hit = o; }); return hit; })();
 
+  // The animation mixer writes a bone only when its animated value has changed since the last frame. The
+  // game also turns some bones itself every frame, on top of the animation (heads toward the play, fingers
+  // round the cue, a hand on the arm of a chair), so a bone whose animation held still kept those turns and
+  // had the next ones added: a spectator's head turning round and round, a hand drifting off the cue. Every
+  // animated bone is now written every frame, so the game's turns always start from the animation's pose.
+  (function () {
+    const PM = T.PropertyMixer && T.PropertyMixer.prototype; if (!PM || PM._velvetAlways) return;
+    PM.apply = function (accuIndex) {
+      const stride = this.valueSize, buffer = this.buffer, offset = accuIndex * stride + stride,
+        weight = this.cumulativeWeight, weightAdditive = this.cumulativeWeightAdditive;
+      this.cumulativeWeight = 0; this.cumulativeWeightAdditive = 0;
+      if (weight < 1) this._mixBufferRegion(buffer, offset, stride * this._origIndex, 1 - weight, stride);
+      if (weightAdditive > 0) this._mixBufferRegionAdditive(buffer, offset, this._addIndex * stride, 1, stride);
+      this.binding.setValue(buffer, offset);
+    };
+    PM._velvetAlways = true;
+  })();
   const People = { templates: {}, clips: {}, ready: false, errors: [] };
 
   People.loadClips = async function (anims) {
@@ -434,9 +451,44 @@
       }
       tracks.push(new T.VectorKeyframeTrack(t.name, t.times, v));
     }
-    const clip = new T.AnimationClip(clipName, raw.duration, tracks);
+    let clip = new T.AnimationClip(clipName, raw.duration, tracks);
+    if (LOOPED.test(clipName)) clip = People.looped(clip);
     tpl.fitted[clipName] = clip;
     return clip;
+  };
+  // Motion capture rarely ends where it began, so a looping idle or clap would jump back to its first pose
+  // every time round. These clips are made seamless: their last moments are cross-faded into their first,
+  // so the pose (and its motion) runs on through the loop point. Walks are already cycles; one-off
+  // motions (reaching, gestures, cheers) are played once, so they are left as they are.
+  const LOOPED = /idle|breathe|claphands|thoughtful/;
+  People.looped = function (clip, blend = 0.45) {
+    People._looped = People._looped || new WeakMap();
+    const hit = People._looped.get(clip); if (hit) return hit;
+    const dur = clip.duration, b = Math.min(blend, dur / 4), L = dur - b;
+    if (!(dur > 1)) { People._looped.set(clip, clip); return clip; }
+    const sm = (u) => u * u * (3 - 2 * u), tracks = [];
+    for (const tr of clip.tracks) {
+      if (tr.times.length < 2) { tracks.push(tr); continue; }
+      const n = tr.getValueSize(), it = tr.createInterpolant(), quat = tr instanceof T.QuaternionKeyframeTrack;
+      const at = (t) => Float32Array.from(it.evaluate(Math.min(dur, Math.max(0, t))).subarray(0, n));
+      const ts = new Set([0, b, L]);
+      for (const t of tr.times) if (t < L - 1e-4) ts.add(t);
+      const times = [...ts].sort((x, y) => x - y), vals = new Float32Array(times.length * n);
+      times.forEach((t, k) => {
+        const v = at(t);
+        if (t < b) {                                   // the head, eased in from the tail
+          const tail = at(t + L), w = sm(t / b);
+          if (quat) T.Quaternion.slerpFlat(v, 0, tail, 0, v, 0, w);
+          else for (let c = 0; c < n; c++) v[c] = tail[c] + (v[c] - tail[c]) * w;
+        }
+        vals.set(v, k * n);
+      });
+      vals.set(vals.subarray(0, n), (times.length - 1) * n);   // the last key is the first: no jump at the loop
+      tracks.push(new tr.constructor(tr.name, times, vals));
+    }
+    const out = new T.AnimationClip(clip.name, L, tracks);
+    People._looped.set(clip, out);
+    return out;
   };
   // A clip without the right arm (for a player holding his cue in that hand).
   People.noRight = function (clip) {

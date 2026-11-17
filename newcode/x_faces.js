@@ -60,7 +60,8 @@
       if(e.lid){top+=e.lid[0]*v;bottom+=e.lid[1]*v;}
       if(e.jaw)jaw+=e.jaw*v;
       for(const n in e.move||{}){const x=B[n],m=e.move[n];if(x)x.b.position.addScaledVector(x.X,m[0]*v).addScaledVector(x.U,m[1]*v).addScaledVector(x.F,m[2]*v);}}
-    const g=f.pitch||0;top+=g>0?g*.85:g*.5;bottom+=g>0?g*.3:g*.2;   // the lids follow the eyes up and down
+    // the lids follow the eyes up and down, a little: looking down at the table the eyes stay open
+    const g=f.pitch||0;top+=g>0?Math.min(g*.5,.24):Math.max(g*.45,-.15);bottom+=g>0?Math.min(g*.25,.1):g*.2;
     top=Math.min(top,.9);
     for(const [n,a] of [['LEyeBlinkTop',top],['REyeBlinkTop',top],['LEyeBlinkBottom',bottom],['REyeBlinkBottom',bottom]]){
       const x=B[n];if(!x||!x.eye||Math.abs(a)<.001)continue;       // the lid swings round the eyeball
@@ -138,7 +139,7 @@
       if(f.blinkT>=0){f.blinkT+=dt;const u=f.blinkT/.18;b=u<.35?u/.35:u<1?1-(u-.35)/.65:0;if(u>=1)f.blinkT=-1;}
       if(!shown)continue;
       for(const m of f.meshes){const d=m.morphTargetDictionary,inf=m.morphTargetInfluences;
-        for(const k of FACE_KEYS){const i=d[k];if(i!==undefined)inf[i]=k==='blink'?Math.max(b,Math.min(1,f.w.blink+Math.max(0,f.pitch||0)*1.1)):f.w[k];}}
+        for(const k of FACE_KEYS){const i=d[k];if(i!==undefined)inf[i]=k==='blink'?Math.max(b,Math.min(1,f.w.blink+Math.min(.3,Math.max(0,f.pitch||0)*.6))):f.w[k];}}
       if(f.bones)poseBoneFace(f,b);
       if(f.eyes.length&&f.head)lookEyes(f,dt);
     }

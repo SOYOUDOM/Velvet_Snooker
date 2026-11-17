@@ -24,9 +24,9 @@ js = rep(js, "    spawnCrowd();\n  }\n  // Spectators for the current venue's se
 # referee fetches from the tray
 js = rep(js, """      if(f){const pk=POCKETS[f.pocketId];
         ref.queue=[{s:loopNearest(pk.x,pk.z),x:pk.x,z:pk.z}];""", """      if(f){
-        const cr=NET_CRADLES[f.pocketId];ref.queue=[{s:loopNearest(cr.end[0],cr.end[2]),x:cr.end[0],z:cr.end[2],take:fetchType,pocket:f.pocketId}];""", 'ref net')
-js = rep(js, "      if(!ref.task.started){ref.task.started=true;ref.task.until=time+2.7;",
-         "      const due=ref.task.take&&!ref.task.started?falling.filter(f=>f.type===ref.task.take).pop():null;\n      if(due&&!due.inTray&&time-(ref.task.arrived=ref.task.arrived||time)<6){}   // the ball is still settling in the net\n      else if(!ref.task.started){ref.task.started=true;ref.task.until=time+2.7;", 'ref waits for ball')
+        const cr=NET_CRADLES[f.pocketId];ref.queue=ref.queue.filter(kitTask).concat([{s:loopNearest(cr.end[0],cr.end[2]),x:cr.end[0],z:cr.end[2],take:fetchType,pocket:f.pocketId}]);""", 'ref net')
+js = rep(js, "      if(!ref.task.started){ref.task.started=true;const hand=",
+         "      const due=ref.task.take&&!ref.task.started?falling.filter(f=>f.type===ref.task.take).pop():null;\n      if(due&&!due.inTray&&time-(ref.task.arrived=ref.task.arrived||time)<6){}   // the ball is still settling in the net\n      else if(!ref.task.started){ref.task.started=true;const hand=", 'ref waits for ball')
 js = rep(js, "      else if(time>ref.task.until){ref.task=null;if(!ref.queue.length)ref.waitUntil=time+1.1;}",
          "      else if(time>ref.task.until){if(ref.task.take){const i=falling.map(f=>f.type).lastIndexOf(ref.task.take);if(i>=0)falling.splice(i,1);}\n        if(ref.task.empty)falling=falling.filter(f=>!(f.pocketId===ref.task.pocket&&f.type==='red'));\n        ref.task=null;if(!ref.queue.length)ref.waitUntil=time+1.1;}", 'ref take')
 js = rep(js, "  function resPot(type){\n    falling=falling.filter(f=>f.type!==type);\n", "  function resPot(type){\n", 'resPot keeps rail ball')
@@ -88,7 +88,7 @@ js = rep(js, "OUT_X=IN_X+RAIL_W, OUT_Z=IN_Z+RAIL_W;", "OUT_X=IN_X+RAIL_W, OUT_Z=
 js = rep(js, "    if(now>=ai.thinkUntil){\n      const plan=ai.plan;",
          "    if(now>=ai.thinkUntil){\n      if(!botSkipping()&&!playerReady(1)&&now<ai.thinkUntil+20000)return;   // still walking to the shot or getting down\n      const plan=ai.plan;", 'bot waits for its player')
 js = rep(js, "    const p=ref.person;if(!p)return;\n    p.obj.position.set(at.x,FLOOR_Y,at.z);p.obj.rotation.y=ref.yaw;",
-         "    const p=ref.person;if(!p)return;\n    // step back out of a player's way\n    let near=0;for(const pl of PL)if(pl.fade>.5&&pl.act!=='sit'){const d=Math.hypot(pl.x-at.x,pl.z-at.z);near=Math.max(near,clamp((1-d)/.5,0,1));}\n    ref.push=lerp(ref.push||0,near,1-Math.exp(-dt*2.5));const ol=Math.hypot(at.x,at.z)||1;\n    p.obj.position.set(at.x+at.x/ol*.5*ref.push,FLOOR_Y,at.z+at.z/ol*.5*ref.push);p.obj.rotation.y=ref.yaw;", 'referee makes way')
+         "    const p=ref.person;if(!p)return;\n    // out of the players' way (see refAvoid)\n    const off=refAvoid(at,dt);\n    p.obj.position.set(at.x+off[0],FLOOR_Y,at.z+off[1]);p.obj.rotation.y=ref.yaw;", 'referee makes way')
 js = rep(js, "      crowd.push({p,yaw:st.yaw,rank:rnd(),", "      crowd.push({p,sph:new T.Sphere(new T.Vector3(st.x,st.y+.7,st.z),1.05),yaw:st.yaw,rank:rnd(),", 'crowd sphere')
 js = rep(js, """  function updateCrowd(dt){
     if(!crowd.length||!crowdGroup.visible)return;

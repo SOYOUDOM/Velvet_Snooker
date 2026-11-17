@@ -1,6 +1,6 @@
-"""Pocket nets: a ball potted in each of the six pockets drops through the
-see-through pocket into that pocket's net, rolls down its rod catcher and
-settles; the referee then takes a colour out of the right pocket.
+"""Pocket rails: a ball potted in each of the six pockets drops through the
+see-through pocket and the wire basket onto that pocket's chrome rail, rolls
+round the bend and along the side of the table, and settles at the end.
 usage: python3 -I tools/test_nets.py <test index.html>"""
 import json, pathlib, sys
 from playwright.sync_api import sync_playwright
@@ -14,10 +14,10 @@ with sync_playwright() as p:
     pg.wait_for_function('__T.ref.person', timeout=240000)
     pg.evaluate("""() => { const T=__T,P=T.K.POCKETS,reds=T.balls.filter(b=>b.type==='red'); T.ref.queue=[];
       P.forEach((p,i)=>{const b=reds[i];b.x=p.x;b.z=p.z;b.vx=.4*p.ux;b.vz=.4*p.uz;T.potBall(b,i);}); }""")
-    pg.wait_for_timeout(9000)
-    res = pg.evaluate("""() => { const T=__T,K=T.K; return T.falling.map(f=>{const P=K.POCKETS[f.pocketId];
-      return {pocket:f.pocketId,settled:!!f.inTray,below:f.y<K.CLOTH_Y-.1,out:+((f.x-P.x)*P.ux+(f.z-P.z)*P.uz).toFixed(2)};}); }""")
-    ok = len(res) == 6 and all(r['settled'] and r['below'] and 0 < r['out'] < .4 for r in res)
+    pg.wait_for_timeout(14000)
+    res = pg.evaluate("""() => { const T=__T,K=T.K; return T.falling.map(f=>{const P=K.POCKETS[f.pocketId],c=T.NET_CRADLES[f.pocketId];
+      return {pocket:f.pocketId,settled:!!f.inTray,below:f.y<K.CLOTH_Y-.1,along:+((f.x-P.x)*c.al).toFixed(2),off:+Math.abs(f.z-c.zr).toFixed(3)};}); }""")
+    ok = len(res) == 6 and all(r['settled'] and r['below'] and .1 < r['along'] < .55 and r['off'] < .02 for r in res)
     print(json.dumps({'balls': res, 'errors': errs}))
     print('PASS' if ok and not errs else 'FAIL')
     b.close()

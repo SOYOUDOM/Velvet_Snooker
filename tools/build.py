@@ -58,7 +58,7 @@ def build_standalone(project: pathlib.Path) -> pathlib.Path:
 TEST_HOOK = (
     "  window.__T={vxObjects:()=>({OD,cloth:(clothList||[]).map(c=>{let m=0;for(let i=0;i<c.base.length;i++)m=Math.max(m,Math.abs(c.pos.array[i]-c.base[i]));return {bent:c.bent,verts:c.base.length/3,maxd:m};}),custom:customGroup?customGroup.children.length:0,repl:Object.keys(replaceGroups||{}).filter(k=>replaceGroups[k]),studio:!!(studio&&studio.on),stageScreens:stage.screens.length,trophyAt:stage.trophyAt,entrance:VENUES[venueId].entrance,seatModel:!!seatModel}),"
     "VENUES,venueInfo:()=>({id:venueId,group:!!stage.group,rig:!!stage.rig,rigVisible:!!(stage.rig&&stage.rig.visible),cycle:stage.cycle?stage.cycle.length:0,live:stage.screens.length,seats:seats.length,cut:bowlFull.length,cutouts:!!cutouts,children:arenaGroup.children.length}),"
-    "faceExpr,faceOf,poseBoneFace,FACE_BONES,get faces(){return faces},refVoiceLevel,get venueId(){return venueId},state,ai,arena,get balls(){return balls},cueBall,humanTurn,refreshUI,switchTurn,"
+    "faceExpr,faceOf,poseBoneFace,FACE_BONES,shotSettings,NET_CRADLES,setAutoCamera,fadePerson,replaceSound,resetSound,userSfx,commTone:tone,tipSpot,crowdReact,planPath,navField,navSolids,NAV,KIT,kitMeshes,stanceFor,cueAct,greetCrowd,snookerCount,refAvoid,agentsNow,get faces(){return faces},refVoiceLevel,get venueId(){return venueId},state,ai,arena,get balls(){return balls},cueBall,humanTurn,refreshUI,switchTurn,"
     "isAnyOverlayOpen,get time(){return time},tracePath,escapeShotFor,chooseBotShot,ref,crowd,"
     "get quality(){return quality},scene,camera,renderer,setCamera,presets,cam,render,newRack,"
     "get falling(){return falling},loopNearest,resolveShot,applyDecision,finishFrame,concedeFrame,resPot,snookeredOnAll,"
@@ -80,6 +80,12 @@ def build_testcopy(project: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
     js = game.read_text(encoding="utf-8")
     js = replace_once(js, "  // ---- MAIN LOOP", TEST_HOOK + "  // ---- MAIN LOOP", "main loop marker")
     js = replace_once(js, SHOT_HOOK_ANCHOR, SHOT_HOOK_ANCHOR + SHOT_HOOK, "shot hook")
+    # tests can stop the clock at a moment of their choosing (window.__freezeWhen(), or __freeze) to look at it
+    js = replace_once(js, "let dt=clamp((now-previousTime)/1000,0,.05);previousTime=now;time+=dt;",
+                      "let dt=clamp((now-previousTime)/1000,0,.05);previousTime=now;if(window.__freezeWhen&&!window.__freeze&&window.__freezeWhen()){window.__freeze=true;window.__freezeWhen=null;}if(window.__freeze)dt=0;time+=dt;", "freeze hook")
+    # tests can hold the camera on a close-up: window.__camHook(dt) runs after the game's camera
+    js = replace_once(js, "resize();if(!updateCine(dt))updateCamera(dt);",
+                      "resize();if(!updateCine(dt))updateCamera(dt);if(window.__camHook)window.__camHook(dt,setCineCamera);", "camera hook")
     # Software WebGL renders ~1 frame/s here; tests can skip drawing so the
     # physics and bot run in real time, and switch it back on for screenshots.
     js = replace_once(js, "    render(dt);requestAnimationFrame(frame);",
