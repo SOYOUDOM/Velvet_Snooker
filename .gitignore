@@ -1,0 +1,9 @@
+# built, too big for git: python3 tools/build.py standalone velvet
+velvet/Velvet_Snooker_3D_Physics_Studio_Standalone.html
+
+# downloaded or generated
+node_modules/
+__pycache__/
+*.pyc
+*.tmp
+*.packed.glb

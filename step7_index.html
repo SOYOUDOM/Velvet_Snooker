@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1515" />
+  <meta name="description" content="VELVET — a cinematic, offline, physics-based 3D snooker experience." />
+  <title>VELVET 5 — The Snooker Room</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script defer src="js/three.bundle.js"></script>
+  <script defer src="characters/characters.js"></script>
+  <script defer src="characters/characters-pack.js"></script>
+  <script defer src="js/people.js"></script>
+  <script defer src="js/referee-voice.js"></script>
+  <script defer src="js/commentary-voice.js"></script>
+  <script defer src="js/opponents.js"></script>
+  <script defer src="js/table-sounds.js"></script>
+  <script defer src="js/venue-previews.js"></script>
+  <script defer src="objects/objects.js"></script>
+  <script defer src="js/game.js"></script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="world" aria-label="Interactive three-dimensional snooker table"></canvas>
+    <div class="screen-vignette" aria-hidden="true"></div>
+    <div class="noise" aria-hidden="true"></div>
+
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-symbol"><span></span><span></span><span></span></div>
+        <div><div class="brand-name">VELVET<span class="brand-dot">.</span></div><div class="brand-sub">THE SNOOKER ROOM</div></div>
+      </div>
+      <div class="top-center"><span class="live-dot"></span><span>3D SNOOKER · LIVE ARENA</span><span class="top-center-divider"></span><span id="frame-number">FRAME 01</span></div>
+      <div class="header-actions">
+        <button class="icon-button" id="audio-button" title="Toggle audio" aria-label="Toggle audio"><svg viewBox="0 0 24 24" fill="none"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>
+        <button class="camera-auto active" id="auto-camera-button" title="Automatic cinematic camera" aria-pressed="true">✦ AUTO CAM</button>
+        <button class="icon-button" id="hud-button" title="Keep scoreboard visible (H)" aria-label="Pin match scoreboard">HUD</button>
+        <button class="icon-button" id="camera-button" title="Change camera (C)" aria-label="Change camera"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+        <button class="icon-button" id="help-button" title="Controls & rules" aria-label="Help"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4.5 1.5c-.6.7-2 1.3-2 2.5M12 16.5h.01"/></svg></button>
+        <button class="menu-button" id="menu-button"><span>MENU</span><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </header>
+
+    <div class="scoreboard" id="scoreboard" aria-live="polite">
+      <div class="player player-active" id="player-0"><div class="player-dot"></div><div class="player-info"><span id="player-name-0">PLAYER ONE</span><small id="player-caption-0">AT THE TABLE</small></div><strong id="player-score-0">0</strong></div>
+      <div class="score-center"><span class="score-divider"></span><span id="frames-score">VS</span><span class="score-divider"></span></div>
+      <div class="player" id="player-1"><strong id="player-score-1">0</strong><div class="player-info align-right"><span id="player-name-1">PLAYER TWO</span><small id="player-caption-1">WAITING</small></div><div class="player-dot"></div></div>
+    </div>
+
+    <aside class="match-panel">
+      <div class="panel-eyebrow"><span class="line"></span> LIVE MATCH <span class="panel-index">01 / 01</span></div>
+      <div class="match-heading">THE TABLE<span class="ornament">✳</span></div>
+      <div class="panel-divider"></div>
+      <div class="info-label">BALL ON</div>
+      <div class="target-row"><span class="target-ball red" id="target-ball"></span><div><strong id="target-title">RED</strong><small id="target-subtitle">1 POINT PER BALL</small></div></div>
+      <div class="panel-divider subtler"></div>
+      <div class="stat-grid"><div><div class="info-label">REDS LEFT</div><div class="stat-number" id="reds-left">15<span> / 15</span></div></div><div><div class="info-label">CURRENT BREAK</div><div class="stat-number" id="current-break">00<span> PTS</span></div></div></div>
+      <div class="remaining-line" id="remaining-line" hidden>REMAINING <b>147</b></div>
+      <div class="panel-divider subtler"></div>
+      <div class="info-label nom-label" id="nomination-label">NEXT COLOUR <span>· AIM TO AUTO SELECT</span></div>
+      <div class="ball-picker" id="ball-picker" aria-label="Legacy colour picker" hidden>
+        <button class="ball-option yellow" data-color="yellow" title="Yellow · 2 points" aria-label="Nominate yellow"></button>
+        <button class="ball-option green" data-color="green" title="Green · 3 points" aria-label="Nominate green"></button>
+        <button class="ball-option brown" data-color="brown" title="Brown · 4 points" aria-label="Nominate brown"></button>
+        <button class="ball-option blue" data-color="blue" title="Blue · 5 points" aria-label="Nominate blue"></button>
+        <button class="ball-option pink" data-color="pink" title="Pink · 6 points" aria-label="Nominate pink"></button>
+        <button class="ball-option black selected" data-color="black" title="Black · 7 points" aria-label="Nominate black"></button>
+      </div>
+      <div class="panel-divider subtler"></div>
+      <div class="info-label">SHOT HISTORY</div>
+      <div class="shot-history" id="shot-history"><div class="history-empty">Your first break awaits.</div></div>
+    </aside>
+
+    <div class="camera-tag" id="camera-tag"><div class="camera-cross">⌗</div><span>AUTO DIRECTOR <b>●</b></span></div>
+    <div class="camera-switcher" aria-label="Quick camera angles"><button id="angle-back" title="Previous camera">◀</button><button id="angle-top" title="Instant overhead view">TOP</button><button id="angle-next" title="Next camera">▶</button></div>
+    <div class="scene-controls" aria-label="Camera and arena scene controls">
+      <div class="scene-title">SCENE DIRECTOR <span id="focus-current">AUTO FOLLOW</span></div>
+      <div class="scene-control-row"><button id="focus-pick" title="Click any point on the playing surface to focus camera there (F)">◎ PICK FOCUS</button><button id="focus-cue" title="Track cue ball position">CUE BALL</button><button id="focus-reset" title="Restore centre focus">RESET</button></div>
+      <div class="scene-control-row"><button id="rail-fade-toggle" class="active" aria-pressed="true" title="Automatically fade wooden rails between your camera and balls">◌ SMART RAIL FADE</button><button id="audience-toggle" class="active" aria-pressed="true" title="Toggle animated referee and crowd">CROWD ON</button></div>
+      <div class="scene-control-row"><button id="aim-guide-toggle" class="active" aria-pressed="true" title="Aiming guide: FULL follows the cue ball's real path off the cushions to the first ball it hits (green ring = legal contact, red = foul); SHORT shows the first stretch; OFF shows only the cue (G)">AIM GUIDE · FULL</button><button id="quality-toggle" class="active" title="Graphics quality: HIGH (full crowd, soft shadows, bloom), MEDIUM or LOW (for laptops)">QUALITY · HIGH</button></div><div class="scene-control-row"><button id="bot-pace-toggle" aria-pressed="false" title="Opponent's turn: WATCH it study the table and walk up, or SKIP straight to its shot (S skips once)">BOT TURN · WATCH</button><button id="tv-director-toggle" aria-pressed="false" title="TV cameras: broadcast-style cutaways between shots (T)">TV CAMERAS · OFF</button></div><div class="scene-control-row"><button id="intro-mode" title="Opening titles before the menu: AUTO (full the first time, then short), FULL, SHORT or OFF">INTRO · AUTO</button><button id="walkon-toggle" title="Walk-on: the MC announces the players before a match">WALK-ON · ON</button></div><div class="scene-control-row"><button id="motion-toggle" title="Reduced motion: no opening, no walk-on and no TV cuts">MOTION · FULL</button><button id="watch-intro" title="Watch the opening again (from the main menu)">▶ WATCH INTRO</button></div><div class="mix-panel" aria-label="Audio mix"><label>TABLE<input id="mix-table" type="range" min="0" max="150" value="100"></label><label>CROWD<input id="mix-crowd" type="range" min="0" max="150" value="100"></label><label>REFEREE<input id="mix-ref" type="range" min="0" max="150" value="100"></label><label>COMMENTARY<input id="mix-comm" type="range" min="0" max="150" value="100"></label></div><div class="scene-control-row"><button id="hd-toggle" class="active" aria-pressed="true" title="HD people: the players and referees rebuilt in Blender (MPFB 2) with their own faces, eyes that follow the play and faces that blink and react. CLASSIC uses the original low-poly models. Switching reloads the game (or applies next time, during a match).">PEOPLE · HD</button><button id="commentary-toggle" class="active" aria-pressed="true" title="Two commentators call the match: what really happens on the table, never the same line twice">COMMENTARY · ON</button></div><div class="scene-control-row"><button id="escape-hint" class="hint-button" title="When you are snookered: show an escape line (once per match)">ESCAPE HINT · 1 LEFT</button></div>
+    </div>
+    <div class="focus-tag" id="focus-tag">AIM WITH YOUR MOUSE</div>
+    <div class="comm-tag" id="comm-tag" hidden></div>
+    <div class="comm-caption" id="comm-caption" hidden></div>
+    <button class="bot-skip" id="bot-skip" hidden title="Skip the opponent's thinking and walk-up (S)">SKIP <span>▶▶</span><small>S</small></button>
+
+    <section class="control-dock" aria-label="Shot controls">
+      <div class="dock-owner" id="dock-owner" aria-live="polite">YOUR SETTINGS</div>
+      <div class="dock-section power-section">
+        <div class="dock-title"><span>01</span> SHOT POWER <strong id="power-value">52%</strong></div>
+        <div class="power-track-wrap"><input id="power-slider" type="range" min="5" max="100" value="52" aria-label="Shot power" /><div class="power-ticks"><span>SOFT</span><span>MEDIUM</span><span>FULL</span></div></div>
+      </div>
+      <div class="dock-divider"></div>
+      <div class="dock-section spin-section">
+        <div class="dock-title"><span>02</span> CUE BALL SPIN <button class="text-button" id="reset-spin">RESET</button></div>
+        <div class="spin-row"><div class="spin-pad" id="spin-pad" role="group" aria-label="Cue ball contact point"><span class="spin-grid-v"></span><span class="spin-grid-h"></span><span class="spin-marker" id="spin-marker"></span></div><div class="spin-legend"><span>TOPSPIN <b id="topspin-value">0%</b></span><span>SIDESPIN <b id="sidespin-value">0%</b></span></div></div>
+      </div>
+      <div class="dock-divider shoot-divider"></div>
+      <div class="shoot-section"><button class="shoot-button" id="shoot-button"><span class="shoot-text"><small>PRESS SPACE</small><strong>TAKE SHOT</strong></span><span class="shoot-icon">↗</span></button><div class="shoot-hint" id="shoot-hint">READY TO PLAY</div></div>
+    </section>
+
+    <div class="control-hint"><span><kbd>AIM</kbd> AUTO COLOUR</span><span><kbd>DRAG WHITE</kbd> IN THE D</span><span><kbd>MOVE</kbd> AIM</span><span><kbd>SHIFT CLICK</kbd> FOCUS</span><span><kbd>SCROLL</kbd> POWER</span><span><kbd>C</kbd> CAMERA</span><span><kbd>P</kbd> PLAYER VIEW</span><span><kbd>E</kbd> ESCAPE HINT</span><span><kbd>SPACE</kbd> SHOOT</span></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="arena-reaction" id="arena-reaction" aria-live="polite"><img id="crowd-gif" src="assets/crowd-applause.gif" alt="Animated audience reaction" hidden><div class="arena-reaction-text"><span class="arena-reaction-label">THE AUDIENCE</span><div id="crowd-reaction"></div></div></div>
+
+    <div class="overlay active" id="welcome-screen">
+      <div class="overlay-backdrop"></div>
+      <div class="welcome-card"><div class="welcome-kicker"><span class="live-dot"></span> PRIVATE CLUB · EST. 2026</div><div class="welcome-line"></div><h1>THE ART<br>OF THE <em>BREAK.</em></h1><p>A televised snooker arena. Twenty-two balls. One perfect frame. Broadcast lighting and TV cameras, a real referee who fetches and re-spots the colours, a live audience that follows every shot, and an aiming guide that traces the cue ball's true path off the cushions.</p><div class="welcome-meta"><span>01 / TV LIGHTING</span><span>02 / REAL REFEREE &amp; CROWD</span><span>03 / CUSHION-PATH GUIDE</span></div><div class="game-mode"><label>SELECT A GAME MODE</label><div class="mode-grid"><button class="mode active" data-mode="practice"><strong>SOLO PRACTICE</strong><small>Play at your own pace</small></button><button class="mode" data-mode="bot"><strong>PLAY THE BOT</strong><small>Club bot or a pro</small></button><button class="mode" data-mode="versus"><strong>LOCAL TWO PLAYER</strong><small>Pass the cue with a friend</small></button><button class="mode" data-mode="tournament"><strong>TOURNAMENT</strong><small>16-player knockout</small></button></div><label class="length-label" for="venue-select">VENUE</label><select class="opponent-select" id="venue-select"></select><div class="venue-card" id="venue-card"><img class="venue-shot" id="venue-shot" alt="" /><div class="venue-info"><strong id="venue-name"></strong><p id="venue-desc"></p><small id="venue-meta"></small></div></div><label class="length-label" id="length-label">MATCH LENGTH · BOT &amp; TWO PLAYER</label><div class="length-grid" id="length-grid"><button class="length active" data-best="1">1 FRAME</button><button class="length" data-best="3">BEST OF 3</button><button class="length" data-best="5">BEST OF 5</button><button class="length" data-best="7">BEST OF 7</button></div><div class="opponent-box" id="opponent-box" hidden><label class="length-label" id="opponent-label" for="opponent-select">OPPONENT · LEVEL</label><select class="opponent-select" id="opponent-select"></select><div class="length-grid tour-format"><button class="tformat" data-format="quick">QUICK</button><button class="tformat" data-format="standard">STANDARD</button><button class="tformat" data-format="pro">PRO</button></div><div class="length-grid"><button class="level" data-level="easy">EASY</button><button class="level" data-level="medium">MEDIUM</button><button class="level" data-level="hard">HARD</button><button class="level" data-level="veryhard">VERY HARD</button></div><div class="opponent-note" id="opponent-note"></div></div></div><button class="enter-button" id="start-button"><span>ENTER THE ROOM</span><span>↗</span></button><div class="welcome-foot">WEBGL 2 · SPIN PHYSICS · TABLE AUDIO · OFFLINE</div></div>
+    </div>
+
+    <div class="overlay" id="menu-screen"><div class="overlay-backdrop"></div><div class="dialog-card"><div class="dialog-eyebrow">THE SNOOKER ROOM</div><h2>PAUSED<span>.</span></h2><p>Ready when you are.</p><button class="dialog-primary" id="resume-button">RESUME GAME <span>↗</span></button><button class="dialog-secondary" id="restart-button">RACK THE BALLS AGAIN</button><button class="dialog-secondary" id="concede-button">CONCEDE THIS FRAME</button><button class="dialog-secondary" id="mode-button">NEW GAME / CHANGE MODE</button></div></div>
+    <div class="overlay" id="help-screen"><div class="overlay-backdrop"></div><div class="dialog-card help-card"><button class="close-help" id="close-help" aria-label="Close help">×</button><div class="dialog-eyebrow">MASTER YOUR CRAFT</div><h2>HOW TO PLAY<span>.</span></h2><div class="help-rows"><div><kbd>MOUSE MOVE</kbd><span>Point on the playing surface to aim the cue</span></div><div><kbd>CLICK COLOUR</kbd><span>After potting a red, point your cue at a coloured ball: the first object ball in the aim line is automatically nominated. You may still click a colour directly to override that choice. Reds are not selectable.</span></div><div><kbd>DRAG WHITE</kbd><span>At the start of a frame or after an in-off, move the cue ball inside the semicircular D.</span></div><div><kbd>AUTO CAM</kbd><span>Enables automatic camera direction; the arrows and TOP provide instant manual views.</span></div>
+      <div><kbd>PICK FOCUS / F</kbd><span>Click PICK FOCUS then select any point on the felt, or Shift + click directly to refocus. CUE BALL and RESET quickly change focus.</span></div>
+      <div><kbd>RAIL FADE / V</kbd><span>Front wooden rails gradually become transparent when they hide a ball. Toggle to see fully solid rails instead.</span></div>
+      <div><kbd>ARENA</kbd><span>Referee and spectators respond to the real result and difficulty of a shot. Routine pots stay quiet; difficult pots earn a standing reaction.</span></div><div><kbd>H</kbd><span>Pin / unpin the score panels; otherwise they hide automatically.</span></div><div><kbd>RIGHT DRAG</kbd><span>Orbit the camera around the table</span></div><div><kbd>SPEAKER</kbd><span>Click the speaker in the top bar to hear a test impact and enable or mute the audio.</span></div><div><kbd>SCROLL</kbd><span>Adjust shot power (Ctrl + scroll: zoom)</span></div><div><kbd>← / →</kbd><span>Fine-tune your aim angle</span></div><div><kbd>SPACE</kbd><span>Strike the cue ball</span></div><div><kbd>C</kbd><span>Cycle the TV main, overhead, reverse, side, three-quarter and high cameras</span></div><div><kbd>R</kbd><span>Rack a fresh frame (practice mode only; in a match use the menu)</span></div><div><kbd>G</kbd><span>Aiming guide. FULL follows the cue ball's real path off the cushions to the first ball it touches: a green ring means a legal contact, red means a foul (or an in-off), a small ring shows where the white would stop short. Ideal for escaping snookers. While the bot lines up, its planned path is shown in gold. SHORT shows only the first stretch; OFF shows only the cue.</span></div><div><kbd>QUALITY</kbd><span>HIGH, MEDIUM or LOW graphics. LOW has fewer spectators and no shadows, for laptops.</span></div><div><kbd>FAIR PLAY</kbd><span>Each player keeps their own power and spin. Shot controls lock while the balls are moving and during your opponent's turn, when the dock shows their settings view-only.</span></div><div><kbd>ESC</kbd><span>Open or close the menu</span></div></div><div class="rules-note"><strong>SNOOKER 101</strong><p>Pot a red (1 point), then nominate and pot a colour (2–7 points). Colours return to their spots while reds remain. Once the last red and its following colour are played, clear colours in order: yellow, green, brown, blue, pink, black. Wrong first contact, illegal pots, in-offs and push shots are fouls (4 points minimum). After a foul your opponent chooses to play on or put you back in; after a <b>foul and a miss</b> they may also have the balls replaced (three misses with a clear line lose the frame). If a foul leaves you snookered you get a <b>free ball</b>. Scores level at the end means a <b>re-spotted black</b>.</p></div></div></div>
+    <div class="overlay" id="end-screen"><div class="overlay-backdrop"></div><div class="dialog-card finish-card"><div class="dialog-eyebrow">FRAME COMPLETE</div><h2 id="end-title">WELL PLAYED<span>.</span></h2><p id="end-description">A beautiful finish.</p><button class="dialog-primary" id="play-again-button">PLAY ANOTHER FRAME <span>↗</span></button></div></div>
+    <div class="overlay" id="decision-screen"><div class="overlay-backdrop"></div><div class="dialog-card decision-card"><div class="dialog-eyebrow" id="decision-eyebrow">FOUL</div><h2 id="decision-title">YOUR CHOICE<span>.</span></h2><p id="decision-text"></p><div class="decision-buttons" id="decision-buttons"></div></div></div>
+    <div class="overlay" id="tournament-screen"><div class="overlay-backdrop"></div><div class="dialog-card tour-card"><div class="dialog-eyebrow" id="tour-eyebrow">VELVET OPEN</div><h2 id="tour-title">LAST 16<span>.</span></h2><div class="tour-bracket" id="tour-bracket"></div><p class="tour-info" id="tour-info"></p><div class="tour-buttons"><button class="dialog-primary" id="tour-play">PLAY MATCH <span>↗</span></button><button id="tour-new">NEW TOURNAMENT</button><button id="tour-menu">MAIN MENU</button></div><div class="tour-career" id="tour-career"></div></div></div>
+    <div id="fatal" hidden></div>
+  </div>
+</body>
+</html>

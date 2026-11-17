@@ -1,0 +1,19 @@
+schema_version = "1.0.0"
+
+id = "velvet_character_maker"
+version = "2.0.0"
+name = "VELVET Character Maker"
+tagline = "Make people with MPFB and export them into the VELVET snooker game"
+maintainer = "VELVET"
+type = "add-on"
+
+tags = ["Game Engine", "Import-Export", "Rigging"]
+
+blender_version_min = "5.3.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Writes the characters you export into your VELVET game folder"
