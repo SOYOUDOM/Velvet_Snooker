@@ -107,12 +107,20 @@
     }));
   };
   // One character from the people data file -> People.templates[entry.id].
-  // HD people (characters/hd.js, made with the Blender add-on): the same
-  // character rebuilt on a detailed MPFB body with its own face and hair, eyes
-  // that turn and a face that moves (morph targets). Used for the game's own
-  // characters when the HD setting is on; a character you changed in VELVET
-  // Studio keeps your version.
-  People.hdOn = function () { try { return localStorage.getItem('velvet.hdPeople') !== 'off'; } catch (e) { return true; } };
+  // MPFB people (characters/hd.js, made with the Blender add-on): the same
+  // character rebuilt on an MPFB body with its own face and hair and a face
+  // made of morph targets. Experimental, and off unless switched on in the
+  // settings (PEOPLE · MPFB); the file is only read then. A character you
+  // changed in VELVET Studio keeps your version.
+  People.hdOn = function () { try { return localStorage.getItem('velvet.hdPeople') === 'on'; } catch (e) { return false; } };
+  function loadHdData() {
+    if (window.VELVET_HD || !People.hdOn() || typeof document === 'undefined') return Promise.resolve();
+    return new Promise(done => {
+      const s = document.createElement('script');
+      s.src = 'characters/hd.js'; s.onload = s.onerror = () => done();
+      document.head.appendChild(s);
+    });
+  }
   People.hdLook = function (entry) {
     const look = window.VELVET_HD && entry && window.VELVET_HD[entry.id];
     if (!look || !look.model || !People.hdOn()) return null;
@@ -127,11 +135,104 @@
     for (const k of ['textures', 'normals', 'roughness', 'height', 'muscle', 'belly', 'headScale']) delete e[k];
     return e;
   }
+  // Rounder outlines for the people the cameras come close to (players and referees). Every triangle becomes
+  // four, and each new point is lifted onto the curved surface that the vertex normals describe (Phong
+  // tessellation), so heads, shoulders and arms lose their facets while textures, skinning and the look stay as
+  // modelled. Copies of a point at a texture seam bend alike; sharp edges and open borders (where the head meets
+  // the body) stay where they are, so nothing cracks.
+  People.smoothOn = function () { try { return localStorage.getItem('velvet.smoothPeople') !== 'off'; } catch (e) { return true; } };
+  People.smoothMesh = function (g, alpha = 0.75) {
+    const pos = g.attributes.position, nor = g.attributes.normal, ix = g.index;
+    if (!pos || !nor || !ix || pos.count > 60000 || Object.keys(g.morphAttributes || {}).length) return g;
+    const n = pos.count, P = new Float32Array(n * 3), N = new Float32Array(n * 3);
+    let ext = 0;
+    for (let i = 0; i < n; i++) {
+      P[i * 3] = pos.getX(i); P[i * 3 + 1] = pos.getY(i); P[i * 3 + 2] = pos.getZ(i);
+      const x = nor.getX(i), y = nor.getY(i), z = nor.getZ(i), l = Math.hypot(x, y, z) || 1;
+      N[i * 3] = x / l; N[i * 3 + 1] = y / l; N[i * 3 + 2] = z / l;
+      ext = Math.max(ext, Math.abs(P[i * 3]), Math.abs(P[i * 3 + 1]), Math.abs(P[i * 3 + 2]));
+    }
+    const q = 1e5 / (ext || 1), gid = new Int32Array(n), ids = new Map(), W = [];
+    for (let i = 0; i < n; i++) {
+      const k = Math.round(P[i * 3] * q) + ',' + Math.round(P[i * 3 + 1] * q) + ',' + Math.round(P[i * 3 + 2] * q);
+      let id = ids.get(k);
+      if (id === undefined) { id = W.length / 3; ids.set(k, id); W.push(0, 0, 0); }
+      gid[i] = id; W[id * 3] += N[i * 3]; W[id * 3 + 1] += N[i * 3 + 1]; W[id * 3 + 2] += N[i * 3 + 2];
+    }
+    const pts = W.length / 3, crease = new Uint8Array(pts);
+    for (let id = 0; id < pts; id++) { const l = Math.hypot(W[id * 3], W[id * 3 + 1], W[id * 3 + 2]) || 1; W[id * 3] /= l; W[id * 3 + 1] /= l; W[id * 3 + 2] /= l; }
+    for (let i = 0; i < n; i++) { const id = gid[i]; if (N[i * 3] * W[id * 3] + N[i * 3 + 1] * W[id * 3 + 1] + N[i * 3 + 2] * W[id * 3 + 2] < 0.94) crease[id] = 1; }
+    const I = ix.array, key = (a, b) => (a < b ? a * 4194304 + b : b * 4194304 + a), uses = new Map();
+    for (let t = 0; t < I.length; t += 3) for (let k = 0; k < 3; k++) { const e = key(gid[I[t + k]], gid[I[t + (k + 1) % 3]]); uses.set(e, (uses.get(e) || 0) + 1); }
+    const mids = new Map(), extra = [];
+    const mid = (i, j) => {
+      const e = key(i, j); let m = mids.get(e);
+      if (m !== undefined) return m;
+      m = n + extra.length / 5; mids.set(e, m);
+      let x = (P[i * 3] + P[j * 3]) / 2, y = (P[i * 3 + 1] + P[j * 3 + 1]) / 2, z = (P[i * 3 + 2] + P[j * 3 + 2]) / 2;
+      const a = gid[i], b = gid[j];
+      if (uses.get(key(a, b)) >= 2 && !crease[a] && !crease[b]) {
+        let dx = 0, dy = 0, dz = 0;
+        for (const [v, id] of [[i, a], [j, b]]) {
+          const nx = W[id * 3], ny = W[id * 3 + 1], nz = W[id * 3 + 2];
+          const d = (x - P[v * 3]) * nx + (y - P[v * 3 + 1]) * ny + (z - P[v * 3 + 2]) * nz;
+          dx -= d * nx; dy -= d * ny; dz -= d * nz;
+        }
+        x += alpha * dx / 2; y += alpha * dy / 2; z += alpha * dz / 2;
+      }
+      extra.push(i, j, x, y, z);
+      return m;
+    };
+    const tris = I.length / 3, NI = new Uint32Array(tris * 12);
+    for (let t = 0; t < tris; t++) {
+      const a = I[t * 3], b = I[t * 3 + 1], c = I[t * 3 + 2], ab = mid(a, b), bc = mid(b, c), ca = mid(c, a);
+      NI.set([a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca], t * 12);
+    }
+    const added = extra.length / 5, total = n + added, out = new T.BufferGeometry();
+    for (const [name, attr] of Object.entries(g.attributes)) {
+      if (name === 'skinIndex' || name === 'skinWeight') continue;
+      const sz = attr.itemSize, get = [attr.getX, attr.getY, attr.getZ, attr.getW].slice(0, sz).map((f) => f.bind(attr)), arr = new Float32Array(total * sz);
+      for (let i = 0; i < n; i++) for (let c = 0; c < sz; c++) arr[i * sz + c] = get[c](i);
+      for (let e = 0; e < added; e++) {
+        const i = extra[e * 5], j = extra[e * 5 + 1], o = (n + e) * sz;
+        if (name === 'position') { arr[o] = extra[e * 5 + 2]; arr[o + 1] = extra[e * 5 + 3]; arr[o + 2] = extra[e * 5 + 4]; continue; }
+        for (let c = 0; c < sz; c++) arr[o + c] = (arr[i * sz + c] + arr[j * sz + c]) / 2;
+        if (name === 'normal') { const l = Math.hypot(arr[o], arr[o + 1], arr[o + 2]) || 1; arr[o] /= l; arr[o + 1] /= l; arr[o + 2] /= l; }
+      }
+      out.setAttribute(name, new T.BufferAttribute(arr, sz));
+    }
+    const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    if (si && sw) {
+      const SI = new Uint16Array(total * 4), SW = new Float32Array(total * 4), gi = [si.getX, si.getY, si.getZ, si.getW].map((f) => f.bind(si)), gw = [sw.getX, sw.getY, sw.getZ, sw.getW].map((f) => f.bind(sw));
+      for (let i = 0; i < n; i++) for (let c = 0; c < 4; c++) { SI[i * 4 + c] = gi[c](i); SW[i * 4 + c] = gw[c](i); }
+      const acc = new Map();
+      for (let e = 0; e < added; e++) {
+        acc.clear();
+        for (const v of [extra[e * 5], extra[e * 5 + 1]]) for (let c = 0; c < 4; c++) { const w = SW[v * 4 + c]; if (w > 0) acc.set(SI[v * 4 + c], (acc.get(SI[v * 4 + c]) || 0) + w); }
+        const top = [...acc].sort((u, v) => v[1] - u[1]).slice(0, 4), sum = top.reduce((t, x) => t + x[1], 0) || 1, o = (n + e) * 4;
+        top.forEach(([b, w], c) => { SI[o + c] = b; SW[o + c] = w / sum; });
+      }
+      out.setAttribute('skinIndex', new T.Uint16BufferAttribute(SI, 4));
+      out.setAttribute('skinWeight', new T.BufferAttribute(SW, 4));
+    }
+    out.setIndex(new T.BufferAttribute(NI, 1));
+    for (const gr of g.groups) out.addGroup(gr.start * 4, gr.count * 4, gr.materialIndex);
+    out.name = g.name; out.userData = Object.assign({}, g.userData, { smoothed: true });
+    out.computeBoundingBox(); out.computeBoundingSphere();
+    return out;
+  };
   People.loadEntry = async function (entry, order = 0, opts = {}) {
     if (!entry || !entry.id || !entry.model) throw new Error('entry needs id and model');
     entry = hdEntry(entry);
     const gltf = await parse(await readFile(entry.model), entry.model), scene = gltf.scene;
     if (!opts.noTextures) await applyTextures(scene, entry);
+    if (!entry.hd && (entry.role === 'player' || entry.role === 'referee') && People.smoothOn()) {
+      scene.traverse((o) => {
+        if (!o.isSkinnedMesh || [].concat(o.material).some((m) => m.alphaTest > 0 || m.transparent)) return;
+        const g = People.smoothMesh(o.geometry);
+        if (g !== o.geometry) { o.geometry.dispose(); o.geometry = g; }
+      });
+    }
     const rough = Object.entries(entry.roughness || {});      // optional, by material key: 0 glossy .. 1 matte
     if (rough.length) scene.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) for (const [k, v] of rough) if (matches(m.name, k)) m.roughness = +v; });
     scene.traverse((o) => {
@@ -139,6 +240,8 @@
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
         if (m.map) m.map.anisotropy = 4;
+        const nm = m.normalMap && m.normalMap.image;     // a 1-pixel stand-in normal map lights the model in flat, blotchy facets
+        if (nm && (nm.width || 0) <= 4 && (nm.height || 0) <= 4) { m.normalMap = null; m.needsUpdate = true; }
         m.envMapIntensity = entry.role === 'referee' ? 0.55 : 0.3; // the arena is dark; only the table is bright
         if (entry.hd && m.name === 'skin') {   // the classic faces' normal maps light them flat and bright; HD skin gets a soft fill to match
           m.roughness = 0.6; m.emissive.set(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.32;
@@ -173,7 +276,7 @@
   };
   People.load = async function (man) {
     const list = (man && man.people) || [];
-    await People.loadClips(man && man.animations);
+    await Promise.all([People.loadClips(man && man.animations), loadHdData()]);
     await Promise.all(list.map(async (entry, order) => {
       try { await People.loadEntry(entry, order); }
       catch (e) { People.errors.push((entry && entry.id) + ': ' + e.message); }

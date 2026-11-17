@@ -9,7 +9,22 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
 
+## Changes in version 6.8 (the classic people are back, with faces that move)
+
+- **The classic players and referees are back by default.** Next to the original models, the MPFB bodies from 6.7 looked plain and boxy. They are now an option: **PEOPLE · CLASSIC / MPFB** in the settings (CLASSIC unless you switch). The game only reads `characters/hd.js` when MPFB is on, so it also starts faster.
+- **Faces that move, on the classic people.** The players and the referee use the face bones the classic models already have:
+  - The eyelids swing round the eyeball to blink, squint or open wide, and they follow the eyes when they look down at the ball or up.
+  - The brows go up, down or worried. The mouth corners smile or frown. The lips press, pucker or sneer, and the jaw opens.
+  - Everything from 6.7 still happens: blinking, eyes following the play, focus on a shot, a face for every reaction, the winner's smile, and the referee's mouth following his voice.
+- **Smoother bodies.** When the game loads, every triangle of the players and referees becomes four. Each new point sits on the curved surface the model describes. Heads, shoulders and arms are rounder, and the textures and clothes are unchanged. The crowd stays as it was.
+- **Cleaner outfits.**
+  - **Lighting.** Six opponents and two referees were lit in flat, blotchy facets. Their models carried a one-pixel stand-in normal map, and the game now ignores it.
+  - **Waistcoats.** The leftover specks of the old suits are gone. The V-necks of player_01, pro_m03, pro_m07, pro_m08, pro_m13 and pro_b02 now close above the first button.
+- **Tools.** `tools/clean_textures.py` made the texture changes, and `tools/test_people.py` checks all of the above.
+
 ## Changes in version 6.7 (HD people: detailed players and referees with faces that move)
+
+*Since 6.8 these are optional (PEOPLE · MPFB); the classic people are the default.*
 
 - **HD people.** The nine players and three referees at the table are rebuilt in Blender on MPFB 2 bodies (the free MakeHuman for Blender). Each has about 90,000 triangles instead of about 10,000: smooth heads, real fingers and a tailored snooker outfit.
   - **The same people.** Each keeps his own photo face, hair, eye colour and waistcoat colour, so you still know who is at the table. Soy Oudom keeps his own face.
@@ -21,7 +36,7 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
   - Every body reaction brings its face: a fist pump smiles, anger lowers the brows, disbelief opens the eyes and mouth, a sigh worries the brows.
   - After a frame or a match, the winner smiles and the loser shows it.
   - The referee's mouth moves with his voice: it follows the loudness of each call.
-- **PEOPLE · HD / CLASSIC** (in the settings, next to COMMENTARY) switches between the HD people and the original models. It reloads the game; during a match it applies next time.
+- **PEOPLE · HD / CLASSIC** (in the settings, next to COMMENTARY) switches between the HD people and the original models (since 6.8: **PEOPLE · CLASSIC / MPFB**). It reloads the game; during a match it applies next time.
   - A character you changed in VELVET Studio keeps your version.
   - The crowd stays as it was.
 - **Files.** `characters/hd/*.glb` holds one compressed model per character, each 0.6–0.9 MB (meshopt, like the other people). `characters/hd.js` lists them and packs them for opening the game from your disk.
@@ -538,7 +553,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 - `js/studio-merge.js` — applies `characters/blender.js` and `characters/studio.js` on top of the original characters and opponents
 - `objects/objects.js`, `objects/media/`: what you made in the studio's OBJECTS & TEXTURES workspace. The file is empty until you save there.
 - `characters/blender.js`, `characters/blender/` — the people you exported from Blender (empty until you export one)
-- `characters/hd.js`, `characters/hd/` — the HD people (players and referees rebuilt in Blender, with faces that move); PEOPLE · HD / CLASSIC in the settings
+- `characters/hd.js`, `characters/hd/` — the MPFB people (players and referees rebuilt in Blender), used only when PEOPLE · MPFB is on in the settings
 - `blender/` — the VELVET Character Maker add-on for Blender 5.3 (`VELVET_Character_Maker_2.0.0.zip`) and its guide
 - `js/people.js` — loads the characters from the data file, applies their textures, fits each animation to each body and spawns animated copies
 - `js/referee-voice.js` — the referee's calls (MP3, embedded)

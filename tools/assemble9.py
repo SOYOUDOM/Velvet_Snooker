@@ -56,7 +56,7 @@ js = rep(js, "  function updateAimVisuals(){\n    guideN=0;let rings=0;", "  fun
 
 html = (V / 'index.html').read_text()
 html = rep(html, '  <script defer src="characters/characters-pack.js"></script>\n',
-           '  <script defer src="characters/characters-pack.js"></script>\n  <script defer src="characters/blender.js"></script>\n  <script defer src="characters/hd.js"></script>\n  <script defer src="characters/studio.js"></script>\n', 'studio data tag')
+           '  <script defer src="characters/characters-pack.js"></script>\n  <script defer src="characters/blender.js"></script>\n  <script defer src="characters/studio.js"></script>\n', 'studio data tag')
 html = rep(html, '  <script defer src="js/opponents.js"></script>\n',
            '  <script defer src="js/opponents.js"></script>\n  <script defer src="js/studio-merge.js"></script>\n', 'studio merge tag')
 (V / 'index.html').write_text(html)

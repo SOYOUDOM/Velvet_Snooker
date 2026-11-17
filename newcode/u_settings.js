@@ -20,8 +20,8 @@
     set('intro-mode','INTRO · '+m.toUpperCase(),m!=='off');
     set('walkon-toggle','WALK-ON · '+(walkOnOn()?'ON':'OFF'),walkOnOn());
     set('motion-toggle','MOTION · '+(reducedMotion()?'REDUCED':'FULL'),!reducedMotion());
-    const hdOk=!!(window.VELVET_HD&&Object.keys(window.VELVET_HD).length),hdOn=hdOk&&lsGet('velvet.hdPeople','on')!=='off';
-    set('hd-toggle','PEOPLE · '+(hdOk?(hdOn?'HD':'CLASSIC'):'CLASSIC'),hdOn);
+    const hdOn=lsGet('velvet.hdPeople','off')==='on';
+    set('hd-toggle','PEOPLE · '+(hdOn?'MPFB':'CLASSIC'),hdOn);
     for(const k of Object.keys(mix)){const r=$('mix-'+k);if(r&&+r.value!==Math.round(mix[k]*100))r.value=Math.round(mix[k]*100);}
   }
   $('intro-mode')?.addEventListener('click',()=>{const order=['auto','full','short','off'],m=lsGet(OPEN_KEY+'.mode','auto');
@@ -29,8 +29,7 @@
   $('walkon-toggle')?.addEventListener('click',()=>{lsSet('velvet.walkon',walkOnOn()?'off':'on');paintSettings();});
   $('motion-toggle')?.addEventListener('click',()=>{lsSet('velvet.motion',reducedMotion()?'full':'reduced');if(reducedMotion()&&tvOn)toggleTv();paintSettings();});
   $('hd-toggle')?.addEventListener('click',()=>{
-    if(!(window.VELVET_HD&&Object.keys(window.VELVET_HD).length)){message('HD PEOPLE','NOT INSTALLED (characters/hd.js)',1800);return;}
-    lsSet('velvet.hdPeople',lsGet('velvet.hdPeople','on')==='off'?'on':'off');paintSettings();
+    lsSet('velvet.hdPeople',lsGet('velvet.hdPeople','off')==='on'?'off':'on');paintSettings();
     if(state.started)message('PEOPLE','CHANGES WHEN YOU NEXT OPEN THE GAME',2200);else location.reload();});
   $('watch-intro')?.addEventListener('click',()=>{if(!state.started&&!cine.on)startOpening('full');else message('THE INTRO','AVAILABLE FROM THE MAIN MENU',1600);});
   for(const k of ['table','crowd','ref','comm'])$('mix-'+k)?.addEventListener('input',ev=>{mix[k]=clamp(+ev.target.value/100,0,1.5);applyMix();});

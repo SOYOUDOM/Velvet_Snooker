@@ -28,7 +28,6 @@ SCRIPTS = ["js/three.bundle.js", "characters/characters.js", "characters/charact
 # Written by VELVET Studio.html; read from beside the standalone file, so studio edits apply without a rebuild.
 STUDIO_DATA = "characters/studio.js"
 BLENDER_DATA = "characters/blender.js"  # written by the Blender add-on
-HD_DATA = "characters/hd.js"  # HD people, also written by the add-on (large: read from beside the standalone file)
 
 
 def build_standalone(project: pathlib.Path) -> pathlib.Path:
@@ -46,8 +45,7 @@ def build_standalone(project: pathlib.Path) -> pathlib.Path:
     html = replace_once(html, 'src="assets/crowd-applause.gif"', f'src="{gif_uris["crowd-applause.gif"]}"', "crowd gif img")
     html = replace_once(html, f'  <script defer src="{STUDIO_DATA}"></script>\n', "", "studio data tag")
     html = replace_once(html, f'  <script defer src="{BLENDER_DATA}"></script>\n', "", "blender data tag")
-    html = replace_once(html, f'  <script defer src="{HD_DATA}"></script>\n', "", "hd data tag")
-    studio_tag = f'<script src="{BLENDER_DATA}"></script>\n<script src="{HD_DATA}"></script>\n<script src="{STUDIO_DATA}"></script>\n'
+    studio_tag = f'<script src="{BLENDER_DATA}"></script>\n<script src="{STUDIO_DATA}"></script>\n'
     parts = ["<script>\n" + code + "\n</script>\n" for code in scripts]
     at = SCRIPTS.index("js/studio-merge.js")
     inline = "".join(parts[:at]) + studio_tag + "".join(parts[at:])
@@ -60,7 +58,7 @@ def build_standalone(project: pathlib.Path) -> pathlib.Path:
 TEST_HOOK = (
     "  window.__T={vxObjects:()=>({OD,cloth:(clothList||[]).map(c=>{let m=0;for(let i=0;i<c.base.length;i++)m=Math.max(m,Math.abs(c.pos.array[i]-c.base[i]));return {bent:c.bent,verts:c.base.length/3,maxd:m};}),custom:customGroup?customGroup.children.length:0,repl:Object.keys(replaceGroups||{}).filter(k=>replaceGroups[k]),studio:!!(studio&&studio.on),stageScreens:stage.screens.length,trophyAt:stage.trophyAt,entrance:VENUES[venueId].entrance,seatModel:!!seatModel}),"
     "VENUES,venueInfo:()=>({id:venueId,group:!!stage.group,rig:!!stage.rig,rigVisible:!!(stage.rig&&stage.rig.visible),cycle:stage.cycle?stage.cycle.length:0,live:stage.screens.length,seats:seats.length,cut:bowlFull.length,cutouts:!!cutouts,children:arenaGroup.children.length}),"
-    "faceExpr,faceOf,get faces(){return faces},refVoiceLevel,get venueId(){return venueId},state,ai,arena,get balls(){return balls},cueBall,humanTurn,refreshUI,switchTurn,"
+    "faceExpr,faceOf,poseBoneFace,FACE_BONES,get faces(){return faces},refVoiceLevel,get venueId(){return venueId},state,ai,arena,get balls(){return balls},cueBall,humanTurn,refreshUI,switchTurn,"
     "isAnyOverlayOpen,get time(){return time},tracePath,escapeShotFor,chooseBotShot,ref,crowd,"
     "get quality(){return quality},scene,camera,renderer,setCamera,presets,cam,render,newRack,"
     "get falling(){return falling},loopNearest,resolveShot,applyDecision,finishFrame,concedeFrame,resPot,snookeredOnAll,"

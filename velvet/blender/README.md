@@ -50,7 +50,7 @@ The game's players and referees come as HD people. Each has a detailed MPFB body
 2. Change what you like: MPFB's sliders (*Model*, face and body detail) or the outfit colours in step 2. The face picture stays on the face as you reshape it.
 3. Press **Export** in step 4. He goes into `characters/hd/` and `characters/hd.js` and replaces that character in the game. The panel lists the HD looks in your game; the bin icon gives a character his classic model back.
 
-In the game, **PEOPLE · HD / CLASSIC** in the settings switches between the HD and the original models. A character you changed in VELVET Studio keeps your version.
+In the game, **PEOPLE · CLASSIC / MPFB** in the settings switches between the original models (the default) and these HD people: switch it to MPFB to see what you exported. A character you changed in VELVET Studio keeps your version.
 
 **Your own people can have a face that moves too:** press **Add a face that moves** (step 2) before you export. MakeHuman's eyebrows, eyelashes and beards follow the skin they sit on. If MakeHuman's eyelashes or teeth are missing, they come from MPFB's own helper shapes.
 
