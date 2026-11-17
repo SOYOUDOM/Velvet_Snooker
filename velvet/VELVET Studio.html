@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d1515" />
+  <title>VELVET Studio — characters, faces and players</title>
+  <link rel="stylesheet" href="css/studio.css" />
+  <script defer src="js/three.bundle.js"></script>
+  <script defer src="characters/characters.js"></script>
+  <script defer src="characters/characters-pack.js"></script>
+  <script defer src="characters/blender.js"></script>
+  <script defer src="characters/studio.js"></script>
+  <script defer src="js/people.js"></script>
+  <script defer src="js/opponents.js"></script>
+  <script defer src="js/studio-merge.js"></script>
+  <script defer src="js/studio-tex.js"></script>
+  <script defer src="js/studio.js"></script>
+</head>
+<body>
+  <header id="bar">
+    <div class="brand"><span class="brand-name">VELVET<span class="dot">.</span></span><span class="brand-sub">STUDIO <i>·</i> CHARACTERS, FACES &amp; PLAYERS</span></div>
+    <nav class="ws-tabs" aria-label="Studio workspaces"><a class="on" aria-current="page">CHARACTERS</a><a href="index.html#studio" title="Every object in the game: textures, videos, models, banners and venues">OBJECTS &amp; TEXTURES</a></nav>
+    <div class="bar-mid">
+      <button id="undo-btn" class="ghost" title="Undo (Ctrl+Z)" disabled>↶ UNDO</button>
+      <button id="redo-btn" class="ghost" title="Redo (Ctrl+Y)" disabled>↷ REDO</button>
+      <span id="status" aria-live="polite"></span>
+    </div>
+    <div class="bar-actions">
+      <button id="test-btn" title="Open the game with this character (unsaved changes included)">▶ TEST IN GAME</button>
+      <button id="import-btn" class="ghost" title="Add a character from a .velvetchar file">IMPORT</button>
+      <input type="file" id="import-input" accept=".velvetchar,.json" hidden />
+      <button id="export-btn" class="ghost" title="Save this character as one file to share">EXPORT</button>
+      <div class="save-group">
+        <button id="save-btn" class="primary" title="Save into the game folder (Ctrl+S)">SAVE</button>
+        <button id="save-more" class="primary caret" title="More save options" aria-haspopup="true">▾</button>
+        <div id="save-menu" class="menu" hidden>
+          <button data-act="folder">Choose the game folder…</button>
+          <button data-act="download">Download studio.js instead</button>
+          <button data-act="reset" class="danger">Reset all characters…</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <aside id="list">
+    <input id="search" type="search" placeholder="Search characters and players" autocomplete="off" />
+    <div id="groups"></div>
+    <div class="list-actions">
+      <button id="new-btn" class="primary">+ NEW</button>
+      <button id="copy-btn" class="ghost">COPY</button>
+      <button id="del-btn" class="ghost">DELETE</button>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" aria-label="Character preview"></canvas>
+    <div id="view-tools">
+      <div class="seg" id="cam-seg">
+        <button data-cam="front" class="on">FRONT</button><button data-cam="side">SIDE</button><button data-cam="back">BACK</button><button data-cam="face">FACE</button><button data-cam="game" title="About as big as in the game">GAME VIEW</button>
+      </div>
+      <div class="seg">
+        <label>POSE <select id="pose-sel">
+          <option value="still">Standing still (to edit)</option><option value="idle">Idle</option><option value="walk">Walking</option>
+          <option value="sit">Sitting</option><option value="cheer">Cheering</option><option value="clap">Clapping</option></select></label>
+        <label>LIGHT <select id="light-sel"><option value="studio">Studio</option><option value="arena">Arena</option></select></label>
+        <button id="spin-btn" title="Turn the character slowly">⟳ TURN</button>
+      </div>
+    </div>
+    <div id="tool-hint" hidden></div>
+    <div id="view-help">Drag to turn · right-drag to move · wheel to zoom</div>
+    <div id="busy" hidden><i></i><span>Loading…</span></div>
+  </main>
+
+  <section id="panel">
+    <nav id="tabs" hidden>
+      <button data-tab="character" class="on">CHARACTER</button><button data-tab="look">LOOK</button><button data-tab="face">FACE</button>
+    </nav>
+    <div id="panel-body"></div>
+  </section>
+
+  <div id="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+  <div id="toast" hidden></div>
+</body>
+</html>
