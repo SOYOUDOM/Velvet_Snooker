@@ -20,16 +20,22 @@ def check(name, ok, info=''):
     results.append((name, bool(ok))); print(('PASS ' if ok else 'FAIL ') + name + (f'  {info}' if info else ''), flush=True)
 
 
-# ---- relief maps
-src = (root / 'characters' / 'characters.js').read_text(encoding='utf-8')
+# ---- relief maps: every body and face in characters.js has one (a person may share another's, as Soy Oudom
+# shares player_01's face relief), and each is a real normal map
+import subprocess
+man = json.loads(subprocess.run(['node', '-e', "global.window={};require(process.argv[1]);console.log(JSON.stringify(window.VELVET_CHARACTERS))",
+                                 str(root / 'characters' / 'characters.js')], capture_output=True, text=True, check=True).stdout)
 bad = []
-for f in sorted((root / 'characters' / 'textures').glob('*_body.jpg')) + sorted((root / 'characters' / 'textures').glob('*_head.jpg')):
-    n = f.with_name(f.stem + '_normal.jpg')
-    if not n.is_file() or n.name not in src:
-        bad.append(f.name); continue
-    a = np.asarray(Image.open(n).convert('RGB'), dtype=float)
-    if not (a[..., 2].mean() > 200 and abs(a[..., 0].mean() - 128) < 12 and abs(a[..., 1].mean() - 128) < 12):
-        bad.append(n.name + ' not a normal map')
+for e in man['people']:
+    for part in ('body', 'head'):
+        if part not in (e.get('textures') or {}): continue
+        nrm = (e.get('normals') or {}).get(part)
+        n = root / nrm if nrm else None
+        if not n or not n.is_file():
+            bad.append(f"{e['id']} {part}"); continue
+        a = np.asarray(Image.open(n).convert('RGB'), dtype=float)
+        if not (a[..., 2].mean() > 200 and abs(a[..., 0].mean() - 128) < 12 and abs(a[..., 1].mean() - 128) < 12):
+            bad.append(n.name + ' not a normal map')
 check('every body and face has a relief map listed in characters.js', not bad, ', '.join(bad[:6]))
 
 WAIT = "window.__T&&window.VelvetPeople&&VelvetPeople.ready&&__T.PL&&__T.PL.length===2&&__T.ref.person"

@@ -400,7 +400,7 @@
     G.push({id:'people',label:'PEOPLE',items:[...people.player,...people.referee,...people.audience]});
     G.push({id:'table',label:'TABLE',items:[
       {id:'table',label:'Table',keys:['table.','repl.table.'],replace:true,export:true,info:'The table you play on. Your model changes only its look: the balls still roll on the official table, with the same pockets and cushions. Keep VX_TABLE where it is.'},
-      {id:'nets',label:'Pocket nets',keys:['nets.','table.gold','repl.nets.'],replace:true,export:true,info:'The six pocket nets. The balls really roll inside them, and the net stretches round them like cloth (VX_CLOTH marks the mesh that does that).'},
+      {id:'nets',label:'Pocket nets',keys:['nets.','table.gold','repl.nets.'],replace:true,export:true,info:'The six pockets: brass ring, wire basket and chrome ball-return rail. The balls really drop through the basket and roll down the rail. In your own nets, a mesh marked VX_CLOTH stretches round the balls like cloth.'},
       {id:'lamp',label:'Table lamp',keys:['lamp.','table.metal','repl.lamp.'],replace:true,export:true,info:'The lamp over the table. The table is lit the same whatever the lamp looks like.'}]});
     G.push({id:'balls',label:'BALLS & CUE',items:[
       {id:'balls',label:'Balls',keys:['balls.'],export:true,info:'The 22 balls. Give them new pictures, for example a logo on the cue ball.'},

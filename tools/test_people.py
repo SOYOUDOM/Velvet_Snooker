@@ -46,7 +46,10 @@ check('index.html does not load hd.js up front', '<script defer src="characters/
 
 specks = []
 for name in ['player_01', 'pro_m03', 'pro_b04', 'pro_m13', 'pro_m08']:     # the painted waistcoat fronts
-    a = np.asarray(Image.open(root / 'characters' / 'textures' / f'{name}_body.jpg').convert('L')).astype(float)[540:690, 430:600]
+    a = np.asarray(Image.open(root / 'characters' / 'textures' / f'{name}_body.jpg').convert('L')).astype(float)
+    z = a.shape[0] / 1024                                     # 1K (6.8) or 2K (7.0) textures: the same place, the same specks
+    if z > 1: a = np.asarray(Image.fromarray(a.astype(np.uint8)).resize((1024, 1024), Image.LANCZOS)).astype(float)
+    a = a[540:690, 430:600]
     salt = (a - ndi.median_filter(a, size=9)) > 70
     lab, k = ndi.label(salt)
     small = int(sum(1 for s in ndi.sum(salt, lab, range(1, k + 1)) if s <= 25)) if k else 0
@@ -67,49 +70,80 @@ with sync_playwright() as pw:
       const tris=t=>{let n=0;t.scene.traverse(o=>{if(o.isSkinnedMesh&&!o.material.alphaTest)n+=o.geometry.index.count/3;});return n;};
       const smooth=t=>{let s=0,all=0;t.scene.traverse(o=>{if(o.isSkinnedMesh&&!o.material.alphaTest){all++;if(o.geometry.userData.smoothed)s++;}});return s===all&&all>0;};
       return {hdData:!!window.VELVET_HD, hd:tp.filter(t=>t.hd).length,
-        pl:T.PL.map(p=>{const f=T.faceOf(p.p);return {hd:p.p.tpl.hd,bones:f&&f.bones?Object.keys(f.bones).length:0,eyes:f?f.eyes.length:0,ok:p.ok};}),
-        ref:(()=>{const f=T.faceOf(T.ref.person);return {hd:T.ref.person.tpl.hd,bones:f&&f.bones?Object.keys(f.bones).length:0,eyes:f?f.eyes.length:0};})(),
+        pl:T.PL.map(p=>{const f=T.faceOf(p.p);return {hd:p.p.tpl.hd,arkit:!!(f&&f.arkit),shapes:f&&f.meshes[0]?Object.keys(f.meshes[0].morphTargetDictionary).length:0,eyes:f?f.eyes.length:0,ok:p.ok};}),
+        ref:(()=>{const f=T.faceOf(T.ref.person);return {hd:T.ref.person.tpl.hd,arkit:!!(f&&f.arkit),shapes:f&&f.meshes[0]?Object.keys(f.meshes[0].morphTargetDictionary).length:0,eyes:f?f.eyes.length:0};})(),
         smoothed:tp.filter(t=>t.role==='player'||t.role==='referee').every(smooth), crowdPlain:tp.filter(t=>t.role==='audience').every(t=>!smooth(t)),
         tris:{player:tris(P.templates.player_01),referee:tris(P.templates.referee)},
         button:(document.getElementById('hd-toggle')||{}).textContent}; }""")
     check('classic by default: hd.js not read, no MPFB models, the settings show PEOPLE · CLASSIC',
           not st['hdData'] and st['hd'] == 0 and st['button'] == 'PEOPLE · CLASSIC', json.dumps([st['hdData'], st['hd'], st['button']]))
-    check('both players and the referee have bone faces (18 face bones, two eyes)',
-          all(p['bones'] >= 18 and p['eyes'] == 2 and p['ok'] for p in st['pl']) and st['ref']['bones'] >= 18 and st['ref']['eyes'] == 2, json.dumps([st['pl'], st['ref']]))
+    check('both players and the referee have face shapes (52 ARKit + 15 speech shapes, two eyes)',
+          all(p['arkit'] and p['shapes'] == 67 and p['eyes'] == 2 and p['ok'] for p in st['pl']) and st['ref']['arkit'] and st['ref']['shapes'] == 67 and st['ref']['eyes'] == 2,
+          json.dumps([st['pl'], st['ref']]))
     check('players and referees are smoothed at load, the crowd is not', st['smoothed'] and st['crowdPlain'] and st['tris']['player'] > 20000, json.dumps(st['tris']))
 
     live = pg.evaluate("""() => new Promise(res => { const T=__T,f=T.faceOf(T.PL[0].p),r=T.faceOf(T.ref.person);
-      const lid=x=>x.bones.LEyeBlinkTop,rest=x=>lid(x).pos;let maxBlink=0,rBlink=0,moves=0,last=null;const t0=performance.now();
-      const step=()=>{ maxBlink=Math.max(maxBlink,lid(f).b.position.distanceTo(rest(f)));rBlink=Math.max(rBlink,lid(r).b.position.distanceTo(rest(r)));
+      const lid=x=>{const m=x.meshes[0];return m.morphTargetInfluences[m.morphTargetDictionary.EyeBlinkLeft];};let maxBlink=0,rBlink=0,moves=0,last=null;const t0=performance.now();
+      const step=()=>{ maxBlink=Math.max(maxBlink,lid(f));rBlink=Math.max(rBlink,lid(r));
         const q=f.eyes[0].b.quaternion.toArray().map(v=>v.toFixed(4)).join();if(last&&q!==last)moves++;last=q;
-        if(performance.now()-t0<9000)requestAnimationFrame(step);else res({maxBlink:+(maxBlink*1000).toFixed(1),rBlink:+(rBlink*1000).toFixed(1),moves}); };step(); })""")
-    check('the faces blink (lids swing several mm, a player and the referee) and the eyes move',
-          live['maxBlink'] > 4 and live['rBlink'] > 4 and live['moves'] > 20, json.dumps(live))
+        if(performance.now()-t0<9000)requestAnimationFrame(step);else res({maxBlink:+maxBlink.toFixed(2),rBlink:+rBlink.toFixed(2),moves}); };step(); })""")
+    check('the faces blink (the lids close, a player and the referee) and the eyes move',
+          live['maxBlink'] > .8 and live['rBlink'] > .8 and live['moves'] > 20, json.dumps(live))
 
     eyes = pg.evaluate("""() => { const T=__T,TH=THREE,f=T.faceOf(T.PL[0].p);
       const e=f.eyes[0],p=e.b.getWorldPosition(new TH.Vector3()),q=e.b.getWorldQuaternion(new TH.Quaternion());
       const fwd=e.fwd.clone().applyQuaternion(q).normalize(),to=f.gaze.clone().sub(p).normalize(),head=f.head.fwd.clone().applyQuaternion(f.head.b.getWorldQuaternion(new TH.Quaternion()));
       return {toTarget:+fwd.angleTo(to).toFixed(3),fromHead:+fwd.angleTo(head).toFixed(3)}; }""")
     check('the eyes look at the play, within what eyes can turn', eyes['toTarget'] < .5 and eyes['fromHead'] < .47, json.dumps(eyes))
+    # the corneas point at what the eyes watch (7.0: aimed by the cornea, not by the face's tilted axes)
+    aim = pg.evaluate("""() => { const T=__T,TH=THREE,f=T.faceOf(T.PL[0].p),out=[];
+      for (const e of f.eyes) { const p=e.b.getWorldPosition(new TH.Vector3()),q=e.b.getWorldQuaternion(new TH.Quaternion());
+        const fwd=e.fwd.clone().applyQuaternion(q),to=f.gaze.clone().sub(p).normalize(),head=f.head.fwd.clone().applyQuaternion(f.head.b.getWorldQuaternion(new TH.Quaternion()));
+        out.push({deg:+(fwd.angleTo(to)*57.3).toFixed(1),free:to.angleTo(head)<.4}); }
+      return out; }""")
+    check('the eyes aim at their target (a cornea within 4 degrees of it, when the target is within reach)',
+          all(a['deg'] < 4 for a in aim if a['free']), json.dumps(aim))
 
     pg.evaluate("() => { const T=__T; T.faceExpr(T.PL[0].p,'win',2.2,0); T.faceExpr(T.PL[1].p,'anger',2.2,0); }")
     pg.wait_for_timeout(1300)
-    ex = pg.evaluate("""() => { const T=__T,a=T.faceOf(T.PL[0].p),b=T.faceOf(T.PL[1].p),mm=(f,n)=>+(f.bones[n].b.position.distanceTo(f.bones[n].pos)*1000).toFixed(1);
-      return {smile:+a.w.smile.toFixed(2),corner:mm(a,'LMouthCorner'),brows:+b.w.browsDown.toFixed(2),press:+b.w.press.toFixed(2)}; }""")
-    check('expressions: a won frame smiles (the mouth corners move), anger lowers the brows and presses the lips',
-          ex['smile'] > .6 and ex['corner'] > 5 and ex['brows'] > .6 and ex['press'] > .4, json.dumps(ex))
+    sh = "(f,n)=>{const m=f.meshes[0];return +m.morphTargetInfluences[m.morphTargetDictionary[n]].toFixed(2);}"
+    ex = pg.evaluate("""() => { const T=__T,a=T.faceOf(T.PL[0].p),b=T.faceOf(T.PL[1].p),s=""" + sh + """;
+      return {smile:+a.w.smile.toFixed(2),shape:s(a,'MouthSmileLeft'),cheek:s(a,'CheekSquintLeft'),brows:+b.w.browsDown.toFixed(2),press:+b.w.press.toFixed(2)}; }""")
+    check('expressions: a won frame smiles (smile and cheek shapes), anger lowers the brows and presses the lips',
+          ex['smile'] > .6 and ex['shape'] > .6 and ex['cheek'] > .3 and ex['brows'] > .6 and ex['press'] > .4, json.dumps(ex))
     pg.wait_for_timeout(3500)
-    ex2 = pg.evaluate("() => { const T=__T,a=T.faceOf(T.PL[0].p); return {smile:+a.w.smile.toFixed(2),corner:+(a.bones.LMouthCorner.b.position.distanceTo(a.bones.LMouthCorner.pos)*1000).toFixed(1)}; }")
-    check('the expression fades when it is over', ex2['smile'] < .15 and ex2['corner'] < 2, json.dumps(ex2))
-    quiet = pg.evaluate("() => { const r=__T.faceOf(__T.ref.person); return {voice:__T.refVoiceLevel(),jaw:+r.bones.MJaw.b.quaternion.angleTo(r.bones.MJaw.q).toFixed(4)}; }")
-    check('the referee is quiet: voice level 0, his jaw shut', quiet['voice'] == 0 and quiet['jaw'] < .01, json.dumps(quiet))
+    ex2 = pg.evaluate("() => { const T=__T,a=T.faceOf(T.PL[0].p),s=" + sh + "; return {smile:+a.w.smile.toFixed(2),shape:s(a,'MouthSmileLeft')}; }")
+    check('the expression fades when it is over', ex2['smile'] < .15 and ex2['shape'] < .15, json.dumps(ex2))
+    quiet = pg.evaluate("() => { const r=__T.faceOf(__T.ref.person),s=" + sh + "; return {voice:__T.refVoiceLevel(),jaw:s(r,'JawOpen')}; }")
+    check('the referee is quiet: voice level 0, his jaw shut', quiet['voice'] == 0 and quiet['jaw'] < .02, json.dumps(quiet))
+    # 7.0: the people at the table at full quality, and their textures given back when they leave it
+    full = pg.evaluate("""() => { const P=VelvetPeople,T=__T,R=T.renderer,out={bad:[]};
+      for (const t of Object.values(P.templates)) { if (t.role!=='player'&&t.role!=='referee'||t.hd||t.name.startsWith('__')) continue;
+        const parts={};t.scene.traverse(o=>{if(o.isMesh)parts[o.material.name.split('_').pop()]=o;});
+        const h=parts.head,b=parts.body,w=x=>x&&x.material.map&&x.material.map.image&&x.material.map.image.width;
+        const own=t.name==='pro_oudom';
+        if (!(w(b)===2048&&(own||w(h)===2048)&&h.material.normalMap&&h.material.normalMap.image.width===2048&&b.material.normalMap&&h.material.roughnessMap))
+          out.bad.push(t.name+': '+[w(b),w(h),!!h.material.normalMap,!!h.material.roughnessMap].join('/'));
+        if (!(h.geometry.userData.smoothed&&(h.geometry.morphAttributes.position||[]).length===67)) out.bad.push(t.name+': head not smoothed with its shapes'); }
+      const keep=[T.PL[0].p.tpl,T.PL[1].p.tpl,T.ref.person.tpl],other=Object.values(P.templates).find(t=>t.role==='player'&&!keep.includes(t));
+      const maps=[];other.scene.traverse(o=>{if(o.isMesh)for(const k of ['map','normalMap','roughnessMap'])if(o.material[k])maps.push(o.material[k]);});
+      for (const m of maps) R.initTexture(m);
+      let kept=0,gone=0;const mine=[];for (const t of keep) t.scene.traverse(o=>{if(o.isMesh&&o.material.map)mine.push(o.material.map);});
+      for (const m of mine) m.addEventListener('dispose',()=>kept++); for (const m of maps) m.addEventListener('dispose',()=>gone++);
+      const up=R.info.memory.textures, freed=P.release(keep), down=R.info.memory.textures;
+      out.release={other:other.name,maps:maps.length,up,freed,down,gone,keptDisposed:kept};
+      return out; }""")
+    check('the people at the table: 2K textures, real normal and shine maps, heads smoothed with their 67 shapes', not full['bad'], '; '.join(full['bad'][:6]))
+    check('players and referees away from the table give their textures back to the graphics card, the ones at the table keep theirs',
+          full['release']['gone'] == full['release']['maps'] > 0 and full['release']['down'] <= full['release']['up'] - full['release']['maps'] and full['release']['keptDisposed'] == 0,
+          json.dumps(full['release']))
 
     pg.evaluate("() => localStorage.setItem('velvet.hdPeople','on')")
     pg.reload(); pg.wait_for_function(WAIT, timeout=400000); pg.wait_for_timeout(1500)
     on = pg.evaluate("""() => { const P=VelvetPeople,T=__T,f=T.faceOf(T.PL[0].p);
       const base=(window.VelvetStudio&&VelvetStudio.basePeople||[]).find(e=>e.id==='player_01'),mine=Object.assign({},base,{textures:Object.assign({},base.textures)});
       return {hd:Object.values(P.templates).filter(t=>t.hd).map(t=>t.name),crowdHd:Object.values(P.templates).filter(t=>t.hd&&t.role==='audience').length,
-        players:T.PL.every(p=>p.p.tpl.hd),ref:T.ref.person.tpl.hd,morphs:!!(f&&f.meshes.length&&!f.bones),
+        players:T.PL.every(p=>p.p.tpl.hd),ref:T.ref.person.tpl.hd,morphs:!!(f&&f.meshes.length&&!f.bones&&!f.arkit),
         base:!!P.hdLook(base),edited:!!P.hdLook(mine),button:(document.getElementById('hd-toggle')||{}).textContent}; }""")
     check('PEOPLE · MPFB: after a reload the twelve MPFB looks load (not the crowd), with morph-target faces',
           sorted(on['hd']) == sorted(IDS) and on['crowdHd'] == 0 and on['players'] and on['ref'] and on['morphs'] and on['button'] == 'PEOPLE · MPFB',

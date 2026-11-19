@@ -11,7 +11,7 @@ man = json.loads(subprocess.run(['node', '-e', "global.window={};require(process
 paths = list((man.get('animations') or {}).values())
 for p in man.get('people') or []:
     paths.append(p['model'])
-    for k in ('textures', 'normals'):
+    for k in ('textures', 'normals', 'shine'):
         paths += list((p.get(k) or {}).values())
 files, missing = {}, []
 for p in dict.fromkeys(paths):

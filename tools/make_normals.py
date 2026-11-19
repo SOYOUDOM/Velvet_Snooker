@@ -32,7 +32,7 @@ def normal_map(path, part):
         h = gaussian_filter(h, 1.6 * k)                     # faces: no grain
     gx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / 2
     gy = (np.roll(h, 1, 0) - np.roll(h, -1, 0)) / 2         # +Y is up the image
-    s = STRENGTH[part] / max(k, .5)
+    s = STRENGTH[part] * k                                  # slopes per texel shrink as the texture grows
     n = np.dstack([-gx * s, -gy * s, np.ones_like(h)])
     n /= np.linalg.norm(n, axis=2, keepdims=True)
     return Image.fromarray(np.round((n * .5 + .5) * 255).astype(np.uint8))

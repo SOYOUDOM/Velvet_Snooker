@@ -239,7 +239,7 @@
     try {
       await (clipsReady || (clipsReady = P.loadClips(ANIMS)));
       const body = bodyOf(e);
-      const loadE = Object.assign(clone(e), { id: '__studio_' + token, textures: clone(body.textures || {}), normals: clone(body.normals || {}), model: e.model || body.model });
+      const loadE = Object.assign(clone(e), { id: '__studio_' + token, textures: clone(body.textures || {}), normals: clone(body.normals || {}), shine: clone(body.shine || {}), model: e.model || body.model });
       const tpl = await P.loadEntry(loadE, 0, { noCulling: true });
       if (token !== cur.token) return;
       const want = pose, prev = cur.id;
@@ -334,7 +334,7 @@
     const e = ensureCustom(cur.id), body = bodyOf(e), dir = 'characters/studio/' + e.id + '/', used = new Set();
     cur.entry = e;
     const put = (name, url) => { const path = dir + name; FILES[path] = url.slice(url.indexOf(',') + 1); used.add(path); return path; };
-    e.textures = clone(body.textures || {}); e.normals = clone(body.normals || {});
+    e.textures = clone(body.textures || {}); e.normals = clone(body.normals || {}); e.shine = clone(body.shine || {});
     const st = e.studio = Object.assign({}, e.studio || {}); st.paint = {}; st.keep = {}; st.regions = [];
     for (const [k, Pt] of Object.entries(cur.parts)) {
       if (partEdited(Pt)) { const url = X.encode(Pt, 'final'); e.textures[k] = put(k + (url.startsWith('data:image/webp') ? '.webp' : url.startsWith('data:image/png') ? '.png' : '.jpg'), url); }
@@ -861,7 +861,7 @@
       const b = baseOf(ev.target.value); if (!b) return;
       const e = entryOf(id), had = e.studio && (e.studio.face || (e.studio.regions || []).length || Object.keys(e.studio.paint || {}).length || e.studio.skin || e.studio.hair);
       if (had && !confirm('A new body starts with a clean look: outfit colours, face photo and touch-ups are cleared. Change the body?')) { ev.target.value = bodyOf(e).id; return; }
-      edit(); const x = E(); x.base = b.id; x.model = b.model; x.textures = clone(b.textures || {}); x.normals = clone(b.normals || {}); x.gender = b.gender; x.studio = {};
+      edit(); const x = E(); x.base = b.id; x.model = b.model; x.textures = clone(b.textures || {}); x.normals = clone(b.normals || {}); x.shine = clone(b.shine || {}); x.gender = b.gender; x.studio = {};
       cur.id = null; renderList(); await openChar(id); renderPanel();
     });
     on('c-gender', 'change', (ev) => { edit(); E().gender = ev.target.value; renderList(); });
@@ -1018,7 +1018,7 @@
         const nm = $('n-name').value.trim() || (k === 'opponent' ? 'New opponent' : bodyLabel(bid));
         edit();
         const id = uniqueId(nm, takenPerson), role = k === 'opponent' ? 'player' : k;
-        D.people.push({ id, name: nm, role, gender: b.gender || 'male', base: b.id, model: b.model, textures: clone(b.textures || {}), normals: clone(b.normals || {}), weight: role === 'audience' ? 1 : undefined, studio: {} });
+        D.people.push({ id, name: nm, role, gender: b.gender || 'male', base: b.id, model: b.model, textures: clone(b.textures || {}), normals: clone(b.normals || {}), shine: clone(b.shine || {}), weight: role === 'audience' ? 1 : undefined, studio: {} });
         if (k === 'opponent') { const oid = uniqueId(nm, takenOpp); D.opponents.push({ id: oid, name: nm, short: nm.split(' ').pop().toUpperCase().slice(0, 14), nick: '', style: {}, character: id, tour: true, rating: 84 }); }
         if (after) after(id);
         closeModal(); tab = 'character'; await select('char', id);
@@ -1208,7 +1208,7 @@
     commitCur(); edit();
     const oldId = p.id, id = uniqueId(p.name || bodyLabel(b.id), takenPerson), from = 'characters/studio/' + oldId + '/', to = 'characters/studio/' + id + '/';
     const re = (s) => (typeof s === 'string' && s.startsWith(from) ? to + s.slice(from.length) : s);
-    Object.assign(p, { id, base: b.id, model: b.model, normals: clone(b.normals || {}), name: p.name || bodyLabel(b.id) });
+    Object.assign(p, { id, base: b.id, model: b.model, normals: clone(b.normals || {}), shine: clone(b.shine || {}), name: p.name || bodyLabel(b.id) });
     p.textures = Object.fromEntries(Object.entries(b.textures || {}).map(([k, v]) => [k, re((p.textures || {})[k]) && String(re(p.textures[k])).startsWith(to) ? re(p.textures[k]) : v]));
     const st = p.studio = p.studio || {};
     if (st.paint) st.paint = Object.fromEntries(Object.entries(st.paint).map(([k, v]) => [k, re(v)]));

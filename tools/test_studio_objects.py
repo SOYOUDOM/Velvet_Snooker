@@ -1,7 +1,7 @@
 """VELVET Studio · objects & textures, end to end.
 Pictures and videos on any material; .glb out with VX_ markers (table, nets, venue, trophy) and
 back in (a new venue from markers, your own model, a new look for the table); banners; the nets'
-cloth; undo; saving objects.js and the game picking it up on the next start; no console errors.
+pocket rails; undo; saving objects.js and the game picking it up on the next start; no console errors.
 usage: python3 -I tools/test_studio_objects.py <test index.html> <image> <video>"""
 import base64, json, pathlib, shutil, sys
 from playwright.sync_api import sync_playwright
@@ -102,10 +102,13 @@ with sync_playwright() as pw:
     pg.click('[data-act="redo"]'); idle(pg, 1200)
     u2 = pg.evaluate("() => __T.vxObjects().repl")
     check('undo and redo', 'table' not in u1 and 'table' in u2, f'{u1} -> {u2}')
-    # 9. the nets stretch round a ball in them
-    pg.evaluate("() => { const bl=__T.balls.find(b=>b.type==='red'&&!b.pocketed); __T.potBall(bl,0); }"); pg.wait_for_timeout(4000)
-    cl = pg.evaluate("() => __T.vxObjects().cloth")
-    check('cloth: the net stretches round the ball', cl and max(c['maxd'] for c in cl) > .002, json.dumps(cl))
+    # 9. a potted ball drops through the pocket's basket onto its ball-return rail and runs down to the end of it
+    # (since 6.9 the nets are a wire basket and a chrome rail; VX_CLOTH still marks the basket for your own nets)
+    pg.evaluate("() => { const T=__T,P=T.K.POCKETS[0],bl=T.balls.find(b=>b.type==='red'&&!b.pocketed); T.ref.queue=[]; bl.x=P.x; bl.z=P.z; bl.vx=.4*P.ux; bl.vz=.4*P.uz; T.potBall(bl,0); }")
+    pg.wait_for_timeout(14000)
+    cl = pg.evaluate("""() => { const T=__T,K=T.K; return T.falling.map(f=>{const P=K.POCKETS[f.pocketId],c=T.NET_CRADLES[f.pocketId];
+      return {settled:!!f.inTray,below:f.y<K.CLOTH_Y-.1,along:+((f.x-P.x)*c.al).toFixed(2),off:+Math.abs(f.z-c.zr).toFixed(3),cloth:T.vxObjects().cloth.length};}); }""")
+    check('a potted ball runs down its pocket rail and waits at the end', cl and all(r['settled'] and r['below'] and .1 < r['along'] < .55 and r['off'] < .02 for r in cl), json.dumps(cl))
     # 10. save (download) -> the game reads it on the next start
     saved = download(pg, '[data-act="download"]', 'objects.js', menu='[data-act="savemenu"]'); pg.wait_for_timeout(500)
     text = saved.read_text()

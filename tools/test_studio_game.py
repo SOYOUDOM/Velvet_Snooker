@@ -9,7 +9,7 @@ ARGS=["--use-angle=swiftshader","--enable-unsafe-swiftshader","--ignore-gpu-bloc
 root=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'test_step9').resolve()
 studio={'version':1,
   'people':[{'id':'friend_a','name':'Sam Friend','role':'player','gender':'male','base':'player_01','model':'characters/models/player_01.glb',
-     'textures':{'body':'characters/textures/player_01_body.jpg','head':'characters/textures/player_01_head.jpg','opacity':'characters/textures/player_01_opacity.png'},
+     'textures':{'body':'characters/textures/player_01_body.jpg','head':'characters/textures/player_01_head.jpg','opacity':'characters/textures/player_01_hair.webp'},
      'normals':{'head':'characters/textures/player_01_head_normal.jpg'},'height':1.95,'headScale':1.45,'belly':.9,
      'cue':{'shaft':'#8a5a36','butt':'#b0122a','metal':'silver'}}],
   'opponents':[{'id':'friend_opp','name':'Sam Friend','short':'SAM','nick':'The Rocket','style':{'pot':.9},'character':'friend_a','tour':True,'rating':95}],

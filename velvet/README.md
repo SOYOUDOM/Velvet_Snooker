@@ -1,13 +1,29 @@
-# VELVET 6.3 — Soy "The Titan" Oudom, New Commentary Voices, Championship Arena, Real Pockets, Commentary Team, Human Bot, Broadcast Presentation
+# VELVET 7.0 — Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
 
 An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is rendered with **Three.js (WebGL 2)** and the people are realistic rigged characters with motion-captured animation. It needs no internet connection.
 
 ## Start
 
 - Extract the ZIP, then open `index.html` in desktop Chrome or Edge with hardware acceleration enabled. Keep the `js`, `css`, `assets` and `characters` folders next to it.
-- Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 50 MB, mostly voices and people).
+- Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 95 MB, mostly the people and voices).
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
+
+## Changes in version 7.0 (the people at the table at full quality)
+
+- **The nine players and three referees at full Rocketbox quality.** The crowd is as it was.
+  - Faces and bodies use the library's full-size textures (2048 pixels: four times as many as before), with its real normal maps on faces and hands and its shine maps on faces. Lips, nose and forehead catch the light; the rest of the skin stays soft.
+  - The outfits are the same. Each waistcoat, shirt and bow tie was raised to the new size with the cloth detail of the original texture put back into it, and given relief at that size.
+  - Hair is cut out properly. Six people (pro_m08, pro_m07, pro_m03, pro_b02 and the referees referee_m2 and referee_f1) had lost the cut-out and wore solid blocks of hair; they now have real hair cards, in their own hair colour.
+  - The same mesh, skeleton and size as before (checked to the millimetre), so every animation, the cue, the rest and the walking work as they did.
+- **Faces made with face shapes.** Expressions use the face shapes Rocketbox ships for these heads (the 52 ARKit shapes) instead of moving face bones. Smiles reach the cheeks and eyes, brows lift and knit, the lids close over the eyes, and the female referee's lashes blink with her lids. The 15 speech shapes are there for lip-sync.
+- **Eyes that look at what they watch.** The eyes were aimed by the face's own axes, which tip about 19 degrees up on these heads, so they looked well below their target. They are now aimed by where each cornea points.
+- **Smooth heads with their face shapes.** The smoothing at load (every triangle becomes four) now carries the face shapes along.
+- **Soy "The Titan" Oudom** keeps his own face and outfit, now on the full-quality player body with its face shapes, real relief and shine. His 1.82 m athletic build is made when the game loads.
+- **Memory.** At each new match, the players and referees who are not at the table give their textures back to the graphics card. They come back by themselves when needed.
+- **The referee never walks into a player.** A player the camera hides (your own body in the player view, or one the camera is very close to) was treated as gone, so the referee, the other player and the paths ignored him, and the referee could walk straight through a player down on a shot by a pocket he had to clear. A hidden player now still takes up room, and the referee steps round anyone in his way, away from the table (in a 4-minute bot match he now never comes closer than 0.46 m, centre to centre).
+- **Size and memory.** Each person at the table takes about 2.4 MB instead of 1 MB, so the game is about 21 MB bigger (`characters/characters-pack.js` 52 MB, the single-file build 94 MB). It opens as fast as before. On the graphics card a match takes about 440 MB of textures instead of about 210 MB, and it stays there however many opponents you play, because the ones who leave the table give theirs back (in 6.9 every new opponent added his).
+- **Tools.** `tools/full_people.py` rebuilds the twelve from the Rocketbox originals (with `tools/node/full_avatar.mjs`, `shape_names.mjs` and `bind_boxes.mjs`). `tools/test_people.py` checks the face shapes, the eyes, the textures and the memory release. `tools/make_normals.py` makes the same relief at any texture size.
 
 ## Changes in version 6.9 (people who move like people, real rests, your own sounds)
 
@@ -159,7 +175,7 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
 - **A new opponent: Soy "The Titan" Oudom**, from Cambodia. Choose him from the opponents list.
   - He has his own face and outfit (with the name badge), on the Rocketbox player body.
   - He is 1.82 m tall, with an athletic build.
-  - His model is `characters/models/soy_oudom_the_titan.glb`. The textures are inside it, and it uses the same Rocketbox skeleton as the other players, so every animation in the game works with it.
+  - His model was `characters/models/soy_oudom_the_titan.glb`, with the textures inside it. From 7.0 he uses the full-quality player body (`player_01.glb`) with his own textures, and his build is made when the game loads. It uses the same Rocketbox skeleton as the other players, so every animation in the game works with it.
 - **How he plays:** balanced and tactical. He is accurate and positions the cue ball well, plays strong safety, and has a medium, deliberate tempo.
 - **His cue:** a dark walnut shaft, an ebony butt, brass fittings and a leather tip.
 - **How he reacts:**
@@ -567,7 +583,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 - `css/style.css` — styles
 - `js/three.bundle.js` — Three.js r187 and add-ons (MIT)
 - `characters/characters.js` — the people data file: which models and textures are used, and their roles
-- `characters/models`, `characters/textures`, `characters/animations` — the people as .glb models, texture images (with a `_normal` relief map for each body and face) and motion clips
+- `characters/models`, `characters/textures`, `characters/animations` — the people as .glb models, texture images (with a `_normal` relief map for each body and face, a `_shine` map for each face at the table and `_hair` cut-outs) and motion clips
 - `characters/characters-pack.js` — the same files packed, for opening the game straight from disk
 - `Pack Characters.html` — rebuilds the pack after you change or add characters by hand in characters.js
 - `VELVET Studio.html`, `js/studio.js`, `js/studio-tex.js`, `css/studio.css` — the character studio
@@ -589,7 +605,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 
 ## Credits and licences
 
-- **People:** [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox), © 2020 Microsoft, MIT licence. Fifteen avatars and fifty animations were converted to compressed glTF and resized for the browser. The referee's outfit was painted onto the *Business_Male_06* texture, and the players' waistcoats and bow ties onto *Business_Male_01* and *Business_Male_03*, for this game. Licence: `licenses/Microsoft-Rocketbox-LICENSE.md`.
+- **People:** [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox), © 2020 Microsoft, MIT licence. Fifteen avatars and fifty animations were converted to compressed glTF. The crowd's textures were resized for the browser; the twelve people at the table use the facial versions of their avatars, with the library's full-size textures, normal and shine maps and face shapes. The referee's outfit was painted onto the *Business_Male_06* texture, and the players' waistcoats and bow ties onto *Business_Male_01* and *Business_Male_03*, for this game. Licence: `licenses/Microsoft-Rocketbox-LICENSE.md`.
 - **3D engine:** [three.js](https://threejs.org), MIT licence (`licenses/three.js-LICENSE.txt`). Mesh decompression uses meshoptimizer by Arseny Kapoulkine, MIT licence (`licenses/meshoptimizer-LICENSE.md`).
 - **Referee and MC voices:** generated with [Kokoro-82M](https://github.com/hexgrad/kokoro) (Apache-2.0) through kokoro-onnx (MIT).
 - **Commentary voices:** the twenty voices picked in the voice audition, pre-recorded offline:

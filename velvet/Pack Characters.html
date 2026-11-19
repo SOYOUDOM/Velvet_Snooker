@@ -39,7 +39,7 @@
   function manifestFrom(text) { const w = {}; new Function('window', text)(w); if (!w.VELVET_CHARACTERS) throw new Error('characters.js does not define window.VELVET_CHARACTERS'); return w.VELVET_CHARACTERS; }
   function wanted(man) {
     const paths = Object.values(man.animations || {});
-    for (const p of man.people || []) { paths.push(p.model); for (const k of ['textures', 'normals']) paths.push(...Object.values(p[k] || {})); }
+    for (const p of man.people || []) { paths.push(p.model); for (const k of ['textures', 'normals', 'shine']) paths.push(...Object.values(p[k] || {})); }
     return [...new Set(paths.filter(Boolean).map(norm))];
   }
   // files: Map of 'characters/...' path -> File (relative to the game folder)

@@ -120,6 +120,8 @@
       const nw=makePlayer(P,i,tpl);nw.fade=old.fade;nw.fadeTo=old.fadeTo;nw.kit=old.kit;PL[i]=nw;
     }
     cueStyled='';
+    // players and referees not at this table give their textures back to the graphics card
+    if(P.release)P.release([PL[0].p.tpl,PL[1].p.tpl,ref.person&&ref.person.tpl].filter(Boolean));
   }
   // Each player's own cue (VELVET Studio: shaft wood, butt colour, fittings).
   const CUE_METAL={brass:['#c9a45c',.85,.28],silver:['#d6d9dc',.9,.22],gold:['#e6bc52',.95,.2],black:['#1c1c1f',.4,.38]};
@@ -315,7 +317,8 @@
   // floor where it can) and pulled straight where the way is clear.
   const NAV={cell:.08,x0:-(OUT_X+3.2),z0:-(OUT_Z+3.4),nx:0,nz:0,cache:new Map()};
   NAV.nx=Math.ceil(-2*NAV.x0/NAV.cell)+1;NAV.nz=Math.ceil(-2*NAV.z0/NAV.cell)+1;
-  const seated=p=>p&&p.fade>.5&&(p.act==='sit'||p.act==='rise'||p.act==='sitdown');
+  const present=p=>p&&p.fadeTo>.5;      // in the match (a body the camera hides, your own in the player view, still takes up room)
+  const seated=p=>present(p)&&(p.act==='sit'||p.act==='rise'||p.act==='sitdown');
   function navSolids(self){
     const S=[{x:0,z:0,hx:OUT_X,hz:OUT_Z,r:.1},{x:0,z:CHAIR_Z,c:.27}];   // the table (corners rounded), the drinks table
     CHAIRS.forEach((c,j)=>{if(j===self)return;S.push({x:c[0],z:CHAIR_Z,hx:.3,hz:.28,r:0});
@@ -405,7 +408,7 @@
     for(const p of PL){
       const k=1-Math.exp(-dt*10),ivx=(p.x-p.px)/Math.max(dt,1e-3),ivz=(p.z-p.pz)/Math.max(dt,1e-3);
       p.vx+=(clamp(ivx,-3,3)-p.vx)*k;p.vz+=(clamp(ivz,-3,3)-p.vz)*k;p.px=p.x;p.pz=p.z;
-      if(p.fade<.5)continue;
+      if(!present(p))continue;
       agentsNow.push({who:p,x:p.x,z:p.z,vx:p.vx,vz:p.vz,r:p.act==='down'||p.act==='getdown'?.32:seated(p)?.3:BODY_R});}
     const rp=ref.person&&ref.person.obj;
     if(rp&&refFade>.5){const x=rp.position.x,z=rp.position.z,k=1-Math.exp(-dt*10);
@@ -464,7 +467,7 @@
       const d=Math.hypot(dx,dz)||1e-6,min=A.r+B.r;
       if(d<min){const k=(min-d)/(ma+mb);if(ma)nudge(A.who,-dx/d*k,-dz/d*k);if(mb)nudge(B.who,dx/d*k,dz/d*k);}
     }
-    for(const p of PL){if(p.fade<.5||p.act!=='walk'||!p.path)continue;
+    for(const p of PL){if(!present(p)||p.act!=='walk'||!p.path)continue;
       const e=p.path[p.path.length-1];if(Math.hypot(e[0]-p.x,e[1]-p.z)<.45)continue;     // (goals by the table or a chair are allowed)
       const c=clearAt(p.i,p.x,p.z);if(c>=BODY_R)continue;
       const gx=clearAt(p.i,p.x+.04,p.z)-clearAt(p.i,p.x-.04,p.z),gz=clearAt(p.i,p.x,p.z+.04)-clearAt(p.i,p.x,p.z-.04),gl=Math.hypot(gx,gz)||1;
@@ -622,7 +625,7 @@
     else g={kind:'hold'};
     // the player coming to the table lets the other one get back to his chair first
     const o=PL[1-pl.i];
-    if(g.kind!=='hold'&&pl.act==='sit'&&o&&o.fade>.5&&o.goal.kind==='chair'&&o.act!=='sit'&&o.act!=='sitdown'&&
+    if(g.kind!=='hold'&&pl.act==='sit'&&o&&present(o)&&o.goal.kind==='chair'&&o.act!=='sit'&&o.act!=='sitdown'&&
       Math.hypot(o.x-CHAIRS[o.i][0],o.z-CHAIRS[o.i][1]-CHAIR_FRONT)>1.6&&pl.wait<3.5){pl.wait+=dt;g={kind:'hold'};}
     // the rest goes back to the referee once he has finished with it (he waits for him, holding it);
     // an extension he no longer needs comes off
@@ -945,7 +948,7 @@
     let ox=0,oz=0,slow=1;const sv=Math.sign(ref.v),tx=at.dx*sv,tz=at.dz*sv;
     const ex=at.x/(OUT_X*OUT_X),ez=at.z/(OUT_Z*OUT_Z),el=Math.hypot(ex,ez)||1,nx=ex/el,nz=ez/el;     // outward from the table
     const cur=ref.off||(ref.off=[0,0]),t=ref.task;
-    for(const pl of PL){if(pl.fade<.5||pl.act==='sit')continue;
+    for(const pl of PL){if(!present(pl)||pl.act==='sit')continue;
       if(t&&(t.give===pl.i||t.collect===pl.i))continue;                                   // (the one he is handing the rest to)
       const rx=at.x-pl.x,rz=at.z-pl.z,d=Math.hypot(rx,rz)||1e-3,min=BODY_R+(pl.act==='down'||pl.act==='getdown'?.34:BODY_R)+.14;
       if(d<min+.3){const k=(min+.3-d);ox+=rx/d*k;oz+=rz/d*k;}
@@ -954,6 +957,11 @@
     const inn=ox*nx+oz*nz;if(inn<0){ox-=inn*nx;oz-=inn*nz;}                               // never toward the table
     const L=Math.hypot(ox,oz);if(L>.9){ox*=.9/L;oz*=.9/L;}
     const k=1-Math.exp(-dt*4);cur[0]+=(ox-cur[0])*k;cur[1]+=(oz-cur[1])*k;
+    // and never inside anyone: a player on his round (down on a shot by a pocket he must clear, say) is stepped round,
+    // outward from the table, by as much as it takes
+    for(const pl of PL){if(!present(pl)||pl.act==='sit'||(t&&(t.give===pl.i||t.collect===pl.i)))continue;
+      const r=(pl.act==='down'||pl.act==='getdown'?.32:BODY_R)+BODY_R+.04,qx=at.x+cur[0]-pl.x,qz=at.z+cur[1]-pl.z,b=qx*nx+qz*nz,c=qx*qx+qz*qz-r*r;
+      if(c<0){const s2=-b+Math.sqrt(b*b-c);cur[0]+=nx*s2;cur[1]+=nz*s2;}}
     ref.slow=slow;_ro[0]=cur[0];_ro[1]=cur[1];return _ro;
   }
 

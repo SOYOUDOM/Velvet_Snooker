@@ -3,9 +3,11 @@
   // shot went (the same moments as the body reactions), narrow their eyes over
   // a shot, follow the play with their eyes (small saccades, never further than
   // eyes can turn), and the referee's mouth moves with his voice.
+  // The people at the table (full-quality Rocketbox, 7.0) do it with their face
+  // shapes: the 52 ARKit shapes (with 15 speech shapes beside them). Other
   // Rocketbox people do it with their own face bones: eyelids that swing round
   // the eyeball, brows, mouth corners, lips, cheeks and jaw. HD people
-  // (characters/hd.js) do it with morph targets.
+  // (characters/hd.js) do it with morph targets named after the moves.
   const FACE_KEYS=['blink','squint','wide','browsUp','browsDown','browsWorry','smile','frown','press','open','pucker','sneer'];
   const FACE_LOOKS={
     fistpump:{smile:.95,browsUp:.3},acknowledge:{smile:.8,browsUp:.25},satisfied:{smile:.55,press:.15},nod:{smile:.35,press:.1},c_nodyes:{smile:.3},
@@ -28,6 +30,15 @@
     open:{jaw:.24},
     pucker:{move:{LMouthCorner:[-.007,0,.003],RMouthCorner:[.007,0,.003],MUpperLip:[0,0,.003],MBottomLip:[0,0,.003]}},
     sneer:{move:{MUpperLip:[0,.003,0],LCheek:[0,.004,.001],RCheek:[0,.004,.001]},lid:[.1,-.15]}
+  };
+  // The same expressions on ARKit face shapes: how much of each shape one unit of a move takes (shapes add up, to 1).
+  const FACE_ARKIT={
+    blink:{EyeBlinkLeft:1,EyeBlinkRight:1},squint:{EyeSquintLeft:1,EyeSquintRight:1,CheekSquintLeft:.4,CheekSquintRight:.4},wide:{EyeWideLeft:1,EyeWideRight:1},
+    browsUp:{BrowInnerUp:.75,BrowOuterUpLeft:1,BrowOuterUpRight:1},browsDown:{BrowDownLeft:1,BrowDownRight:1},browsWorry:{BrowInnerUp:1,BrowDownLeft:.3,BrowDownRight:.3},
+    smile:{MouthSmileLeft:1,MouthSmileRight:1,CheekSquintLeft:.6,CheekSquintRight:.6,EyeSquintLeft:.25,EyeSquintRight:.25,MouthDimpleLeft:.35,MouthDimpleRight:.35},
+    frown:{MouthFrownLeft:1,MouthFrownRight:1,MouthShrugLower:.4,MouthLowerDownLeft:.15,MouthLowerDownRight:.15},
+    press:{MouthPressLeft:1,MouthPressRight:1,MouthRollLower:.2},open:{JawOpen:1.3},pucker:{MouthPucker:1,MouthFunnel:.3},
+    sneer:{NoseSneerLeft:1,NoseSneerRight:1,MouthUpperUpLeft:.55,MouthUpperUpRight:.55}
   };
   const _xbq=new T.Quaternion(),_xbv=new T.Vector3(),_xbs=new T.Vector3(),_xbm=new T.Matrix4(),_xbr=new T.Quaternion();
   // A Rocketbox face: its bones' rest pose, and the face's own axes (measured from the eyes and the mouth, as rigs
@@ -72,25 +83,57 @@
   }
   const faces=[],_xfz=new T.Vector3(0,0,1),_xfy=new T.Vector3(0,1,0),_xhu=new T.Vector3(),_xfm=new T.Matrix4(),_xfs=new T.Vector3(),_xfp0=new T.Vector3(),_xfq0=new T.Quaternion();
   const _xeq=new T.Quaternion(),_xeq2=new T.Quaternion(),_xpq=new T.Quaternion(),_xhf=new T.Vector3(),_xep=new T.Vector3(),_xew=new T.Vector3(),_xec=new T.Vector3();
+  // Where an eye really looks: the bulge of its cornea, measured on the eyeball in the eye bone's own frame. (The
+  // face's axes, taken from the eyes and the mouth corners, tip about 19 degrees up on Rocketbox heads, as the mouth
+  // sits in front of the eyes: eyes aimed with them looked well below what they watched.)
+  const _xcm=new T.Matrix4();
+  function cornea(head,b){
+    const sk=head&&head.skeleton,i=sk?sk.bones.indexOf(b):-1;if(i<0)return null;
+    const g=head.geometry,P=g.attributes.position,si=g.attributes.skinIndex,sw=g.attributes.skinWeight;if(!P||!si||!sw)return null;
+    _xcm.multiplyMatrices(sk.boneInverses[i],head.bindMatrix);
+    const d=[];
+    for(let k=0;k<P.count;k++){let top=0,w=0;for(let c=0;c<4;c++){const x=sw.getComponent(k,c);if(x>w){w=x;top=si.getComponent(k,c);}}
+      if(top===i&&w>.9)d.push(new T.Vector3().fromBufferAttribute(P,k).applyMatrix4(_xcm));}
+    if(d.length<12)return null;
+    let R=0;for(const x of d)R=Math.max(R,x.length());
+    const a=new T.Vector3();for(const x of d){const l=x.length();if(l>R*.85)a.addScaledVector(x,1/l);}
+    return a.lengthSq()>0?a.normalize():null;
+  }
   // A person's face, made on first use (null for people with neither morph targets nor face bones).
   function faceOf(p){
     if(!p)return null;
     if(p.face!==undefined)return p.face;
-    const meshes=[];p.obj.traverse(o=>{if(o.isMesh&&o.morphTargetDictionary&&o.morphTargetInfluences)meshes.push(o);});
+    const meshes=[];let headMesh=null;
+    p.obj.traverse(o=>{if(o.isMesh&&o.morphTargetDictionary&&o.morphTargetInfluences)meshes.push(o);
+      if(!headMesh&&o.isSkinnedMesh&&o.skeleton&&/head$/i.test(String(o.material&&o.material.name)))headMesh=o;});
+    const arkit=meshes.length>0&&meshes.every(m=>m.morphTargetDictionary.EyeBlinkLeft!==undefined);
+    let sk=headMesh&&headMesh.skeleton;          // one skin for every bind-pose measure (each part may have its own)
+    if(!sk)sk=(meshes.find(m=>m.isSkinnedMesh&&m.skeleton)||{}).skeleton;
+    if(!sk)p.obj.traverse(o=>{if(!sk&&o.isSkinnedMesh&&o.skeleton)sk=o.skeleton;});
     let bones=null,fwd=_xfz,up=_xfy;
-    if(!meshes.length){const s=[];p.obj.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton)s.push(o.skeleton);});
-      const bf=s[0]&&boneFace(p,s[0]);if(bf){bones=bf.bones;fwd=bf.fwd;up=bf.up;}}
+    if(!meshes.length||arkit){const bf=sk&&boneFace(p,sk);if(bf){fwd=bf.fwd;up=bf.up;if(!arkit)bones=bf.bones;}}
     if(!meshes.length&&!bones)return p.face=null;
-    const f={p,meshes,bones,w:{},want:{},cur:null,next:null,blinkAt:time+1+Math.random()*3,blinkT:-1,eyes:[],head:null,
+    const f={p,meshes,bones,arkit,shape:{},w:{},want:{},cur:null,next:null,blinkAt:time+1+Math.random()*3,blinkT:-1,eyes:[],head:null,
       target:new T.Vector3(),gaze:null,saccAt:0,sacc:new T.Vector3(),focus:false,talks:false,talk:0};
     for(const k of FACE_KEYS){f.w[k]=0;f.want[k]=0;}
-    let sk=(meshes.find(m=>m.isSkinnedMesh&&m.skeleton)||{}).skeleton;
-    if(!sk)p.obj.traverse(o=>{if(!sk&&o.isSkinnedMesh&&o.skeleton)sk=o.skeleton;});
-    const bindFwd=(b,d=fwd)=>{const i=sk?sk.bones.indexOf(b):-1;if(i<0)return null;   // one of the face's axes in the bone's own frame
-      _xfm.copy(sk.boneInverses[i]).invert().decompose(_xfp0,_xfq0,_xfs);return d.clone().applyQuaternion(_xfq0.invert()).normalize();};
-    for(const n of ['Bip01_LEye','Bip01_REye']){const b=p.obj.getObjectByName(n),fwd=b&&bindFwd(b);if(fwd)f.eyes.push({b,fwd});}
-    const h=p.obj.getObjectByName('Bip01_Head'),hf=h&&bindFwd(h);if(hf)f.head={b:h,fwd:hf,up:bindFwd(h,up)};
+    const bindQ=b=>{const i=sk?sk.bones.indexOf(b):-1;if(i<0)return null;_xfm.copy(sk.boneInverses[i]).invert().decompose(_xfp0,_xfq0,_xfs);return _xfq0.clone();};
+    const bindFwd=(b,d=fwd)=>{const q=bindQ(b);return q?d.clone().applyQuaternion(q.invert()).normalize():null;};   // one of the face's axes in the bone's own frame
+    const seen=[];
+    for(const n of ['Bip01_LEye','Bip01_REye']){const b=p.obj.getObjectByName(n);let ef=b&&bindFwd(b);if(!ef)continue;
+      const c=(bones||arkit)&&cornea(headMesh,b);if(c&&c.angleTo(ef)<.6)ef=c;
+      f.eyes.push({b,fwd:ef});const q=bindQ(b);if(q)seen.push(ef.clone().applyQuaternion(q));}
+    const F=seen.length===2?seen[0].clone().add(seen[1]).normalize():fwd,U=up.clone().addScaledVector(F,-up.dot(F)).normalize();
+    const h=p.obj.getObjectByName('Bip01_Head'),hf=h&&bindFwd(h,F);if(hf)f.head={b:h,fwd:hf,up:bindFwd(h,U)};
     p.face=f;faces.push(f);return f;
+  }
+  // Face shapes for the moves of the moment: blinks, and the lids that follow the eyes down to the table.
+  function arkitPose(f,b){
+    const sh=f.shape,w=f.w;for(const n in sh)sh[n]=0;
+    for(const k of FACE_KEYS){if(k==='blink')continue;const v=w[k];if(!(v>.001))continue;const e=FACE_ARKIT[k];for(const n in e)sh[n]=(sh[n]||0)+e[n]*v;}
+    const g=f.pitch||0,lid=Math.min(1,Math.max(b,w.blink)+(g>0?Math.min(.3,g*.6):0));
+    sh.EyeBlinkLeft=Math.max(sh.EyeBlinkLeft||0,lid);sh.EyeBlinkRight=Math.max(sh.EyeBlinkRight||0,lid);
+    if(g<0){const o=Math.min(.35,-g*.7);sh.EyeWideLeft=Math.max(sh.EyeWideLeft||0,o);sh.EyeWideRight=Math.max(sh.EyeWideRight||0,o);}
+    for(const m of f.meshes){const d=m.morphTargetDictionary,inf=m.morphTargetInfluences;for(const n in d){const v=sh[n];inf[d[n]]=v>0?Math.min(1,v):0;}}
   }
   // Show an expression (a key of FACE_LOOKS) for a while, after a delay.
   function faceExpr(p,kind,dur=2.5,delay=0){
@@ -138,7 +181,8 @@
       let b=0;
       if(f.blinkT>=0){f.blinkT+=dt;const u=f.blinkT/.18;b=u<.35?u/.35:u<1?1-(u-.35)/.65:0;if(u>=1)f.blinkT=-1;}
       if(!shown)continue;
-      for(const m of f.meshes){const d=m.morphTargetDictionary,inf=m.morphTargetInfluences;
+      if(f.arkit)arkitPose(f,b);
+      else for(const m of f.meshes){const d=m.morphTargetDictionary,inf=m.morphTargetInfluences;
         for(const k of FACE_KEYS){const i=d[k];if(i!==undefined)inf[i]=k==='blink'?Math.max(b,Math.min(1,f.w.blink+Math.min(.3,Math.max(0,f.pitch||0)*.6))):f.w[k];}}
       if(f.bones)poseBoneFace(f,b);
       if(f.eyes.length&&f.head)lookEyes(f,dt);

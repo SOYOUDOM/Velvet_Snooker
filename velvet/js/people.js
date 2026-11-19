@@ -80,8 +80,8 @@
   // texture keys match materials whose name equals or ends with the key
   const matches = (matName, key) => { const n = String(matName || '').toLowerCase(), k = key.toLowerCase(); return n === k || n.endsWith('_' + k) || n.endsWith(k); };
   async function applyTextures(scene, entry) {
-    const maps = Object.entries(entry.textures || {}), normals = Object.entries(entry.normals || {});
-    if (!maps.length && !normals.length) return;
+    const maps = Object.entries(entry.textures || {}), normals = Object.entries(entry.normals || {}), shine = Object.entries(entry.shine || {});
+    if (!maps.length && !normals.length && !shine.length) return;
     const cache = {};
     const get = (p, color) => cache[p + color] || (cache[p + color] = loadTexture(p, color));
     const jobs = [];
@@ -91,6 +91,7 @@
         for (const [k, p] of maps) if (matches(m.name, k)) jobs.push(get(p, true).then((t) => { m.map = t; m.color && m.color.set(0xffffff); m.needsUpdate = true; }));
         for (const [k, p] of normals) if (matches(m.name, k)) jobs.push(get(p, false).then((t) => {
           m.normalMap = t; m.normalScale = new T.Vector2(1, o.geometry.attributes.tangent ? 1 : -1); m.needsUpdate = true; }));
+        for (const [k, p] of shine) if (matches(m.name, k)) jobs.push(get(p, false).then((t) => { m.roughnessMap = t; m.needsUpdate = true; }));   // x the material's roughness
       }
     });
     await Promise.all(jobs);
@@ -149,7 +150,7 @@
     const look = People.hdLook(entry);
     if (!look) return entry;
     const e = Object.assign({}, entry, { model: look.model, hd: true, face: look.face || [] });
-    for (const k of ['textures', 'normals', 'roughness', 'height', 'muscle', 'belly', 'headScale']) delete e[k];
+    for (const k of ['textures', 'normals', 'shine', 'roughness', 'height', 'muscle', 'belly', 'headScale']) delete e[k];
     return e;
   }
   // Rounder outlines for the people the cameras come close to (players and referees). Every triangle becomes
@@ -160,7 +161,7 @@
   People.smoothOn = function () { try { return localStorage.getItem('velvet.smoothPeople') !== 'off'; } catch (e) { return true; } };
   People.smoothMesh = function (g, alpha = 0.75) {
     const pos = g.attributes.position, nor = g.attributes.normal, ix = g.index;
-    if (!pos || !nor || !ix || pos.count > 60000 || Object.keys(g.morphAttributes || {}).length) return g;
+    if (!pos || !nor || !ix || pos.count > 60000) return g;
     const n = pos.count, P = new Float32Array(n * 3), N = new Float32Array(n * 3);
     let ext = 0;
     for (let i = 0; i < n; i++) {
@@ -232,6 +233,16 @@
       out.setAttribute('skinIndex', new T.Uint16BufferAttribute(SI, 4));
       out.setAttribute('skinWeight', new T.BufferAttribute(SW, 4));
     }
+    // face shapes (full-quality Rocketbox heads): a new point moves halfway between the two it was made from
+    for (const [name, list] of Object.entries(g.morphAttributes || {})) {
+      out.morphAttributes[name] = list.map((attr) => {
+        const sz = attr.itemSize, arr = new Float32Array(total * sz);
+        for (let i = 0; i < n; i++) { arr[i * sz] = attr.getX(i); if (sz > 1) arr[i * sz + 1] = attr.getY(i); if (sz > 2) arr[i * sz + 2] = attr.getZ(i); }
+        for (let e = 0; e < added; e++) { const i = extra[e * 5], j = extra[e * 5 + 1], o = (n + e) * sz; for (let c = 0; c < sz; c++) arr[o + c] = (arr[i * sz + c] + arr[j * sz + c]) / 2; }
+        const b = new T.BufferAttribute(arr, sz); b.name = attr.name; return b;
+      });
+    }
+    out.morphTargetsRelative = g.morphTargetsRelative;
     out.setIndex(new T.BufferAttribute(NI, 1));
     for (const gr of g.groups) out.addGroup(gr.start * 4, gr.count * 4, gr.materialIndex);
     out.name = g.name; out.userData = Object.assign({}, g.userData, { smoothed: true });
@@ -241,6 +252,11 @@
   People.loadEntry = async function (entry, order = 0, opts = {}) {
     if (!entry || !entry.id || !entry.model) throw new Error('entry needs id and model');
     entry = hdEntry(entry);
+    if (!entry.hd && !entry.shine) {     // made before 7.0 (VELVET Studio) on a body that now has shine maps: the body's
+      const vs = window.VelvetStudio, all = (vs && vs.basePeople) || (window.VELVET_CHARACTERS && window.VELVET_CHARACTERS.people) || [];
+      const body = all.find((b) => b !== entry && b.model === entry.model && b.shine);
+      if (body) entry = Object.assign({}, entry, { shine: body.shine });
+    }
     const gltf = await parse(await readFile(entry.model), entry.model), scene = gltf.scene;
     if (!opts.noTextures) await applyTextures(scene, entry);
     if (!entry.hd && (entry.role === 'player' || entry.role === 'referee') && People.smoothOn()) {
@@ -290,6 +306,20 @@
       rocketbox: !!hips, rootY: hips ? hips.position.y : 0, own, clipMap: clips, fitted: {}, weight: entry.weight || 1 };
     People.templates[entry.id] = tpl;
     return tpl;
+  };
+  // Players and referees not at the table give their textures back to the graphics card (four 2K maps each);
+  // three.js sends them again by itself if the person comes back. keep: the templates in use.
+  People.release = function (keep) {
+    const inUse = new Set(keep || []);
+    let n = 0;
+    for (const tpl of Object.values(People.templates)) {
+      if (inUse.has(tpl) || (tpl.role !== 'player' && tpl.role !== 'referee')) continue;
+      tpl.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of [].concat(o.material)) for (const k of ['map', 'normalMap', 'roughnessMap', 'emissiveMap']) if (m[k]) { m[k].dispose(); n++; }
+      });
+    }
+    return n;
   };
   People.load = async function (man) {
     const list = (man && man.people) || [];
