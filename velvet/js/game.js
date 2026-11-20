@@ -1276,11 +1276,12 @@
   function startPeople(){
     const P=window.VelvetPeople,man=window.VELVET_CHARACTERS;
     if(!P||!man){console.warn('VELVET: characters/characters.js not found; playing without referee and audience.');return;}
+    P.aniso=maxAniso;
     const VS=window.VelvetStudio,ready=(VS&&VS.ready)||Promise.resolve();
     ready.then(()=>P.load(man)).then(()=>{spawnPeople();if(VS&&VS.test)studioTest(VS.test);}).catch(e=>console.warn('VELVET: could not load the characters',e));
   }
   function setVenue(id){
-    if(!VENUES[id])return;venueId=id;
+    if(!VENUES[id])return;venueId=id;setNap(id);
     try{localStorage.setItem('velvet.venue',id);}catch(e){}
     buildArena(VENUES[id]);spawnCrowd();
     if($('venue-select'))$('venue-select').value=id;showVenueCard();
@@ -1655,7 +1656,7 @@
     twoBone(r.lua,r.lfa,r.lh,_v1,_v3.copy(_v2).addScaledVector(st.Rt,-.6).add(_v4.set(0,-.15,0)));
     r.lh.getWorldPosition(_v2);aimBone(r.lh,r.lf,_v3.copy(_v2).addScaledVector(st.F,.12).add(_v4.set(0,-.025,0)));
     if(!st.rest){twistTo(r.lh,r.lf,r.lfing[0][0],r.lfing[3][0],st.Rt);curl(r.lfing,_N.set(0,-1,0),[-.25,-.1,.15]);
-      bridgeV(pl,_v2);aimBone(r.lth0,r.lth1,_v3.copy(_v2).addScaledVector(st.F,.05).add(_v4.set(0,.012,0)));   // the thumb up along the cue
+      bridgeV(pl,_v2);aimBone(r.lth0,r.lth1,_v3.copy(_v2).addScaledVector(st.F,.038).addScaledVector(st.Rt,.004).add(_v4.set(0,.03,0)));   // the thumb cocked up beside the cue: the V it lies in
       bridgeV(pl,_v2);closestOnLine(_v2,st.tip,cueDir,_cl);_cl.y-=.0055;_cl.sub(_v2);
       pl.bridgeFix.addScaledVector(_cl,.5);if(pl.bridgeFix.length()>.07)pl.bridgeFix.setLength(.07);pl.bridgeFix.y=clamp(pl.bridgeFix.y,-.012,.03);}
     else{curl(r.lfing,leftPalm(pl,_N),[.9,1.1,.7]);}   // a fist round the rest's shaft
@@ -2563,18 +2564,58 @@
     for(const m of fallingMeshes)m.visible=false;
   }
   function ballAt(r,id,t){const [a,b,k]=frameAt(r,t),o=r.ids.indexOf(id)*8;return new T.Vector3(lerp(a[o],b[o],k),lerp(a[o+1],b[o+1],k),lerp(a[o+2],b[o+2],k));}
-  function playReplay(r,label,onEnd,kind){
-    const d=r.d||drama(r),last=r.frames[r.frames.length-1].t;
-    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,reacted:0,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot});
-    // The replay is a cut-away: the players are posed for the recorded shot and
-    // put back exactly as they were when it ends.
-    if(!cine.snap)cine.snap=playersSnapshot();
+  // The balls' paths, drawn on the cloth as the replay runs: the white's and
+  // those of the balls that mattered (the one that went in first), in their colours.
+  const PATH_COL={cue:0xf4f4ec,red:0xd8262f,yellow:0xf2c51c,green:0x19a04c,brown:0x8a4d26,blue:0x2f66dc,pink:0xf4a3bd,black:0x2b2b2b};
+  let replayPaths=null;
+  function clearPaths(){
+    if(!replayPaths)return;scene.remove(replayPaths.g);
+    for(const p of replayPaths.list){p.mesh.geometry.dispose();p.mesh.material.dispose();}
+    replayPaths=null;
+  }
+  function buildPaths(r,keyId){
+    clearPaths();const list=[];
+    r.ids.forEach((id,i)=>{let travel=0,lx=null,lz=null;const pts=[];
+      for(const fr of r.frames){const o=i*8,f=fr.f;
+        if(f[o+7]<.5||f[o+1]<BALL_Y-.012){if(pts.length&&lx!==null)break;continue;}
+        const x=f[o],z=f[o+2];
+        if(lx===null||Math.hypot(x-lx,z-lz)>.009){if(lx!==null)travel+=Math.hypot(x-lx,z-lz);pts.push([x,z,fr.t]);lx=x;lz=z;}}
+      if(travel>.08&&pts.length>2)list.push({id,type:r.types[i],pts,travel});});
+    list.sort((a,b)=>((b.type==='cue')-(a.type==='cue'))||((b.id===keyId)-(a.id===keyId))||(b.travel-a.travel));
+    const g=new T.Group(),W=.0055,Y=CLOTH_Y+.0017;
+    const keep=list.slice(0,4);
+    for(const p of keep){const n=p.pts.length,pos=new Float32Array(n*6),idx=[];
+      for(let k=0;k<n;k++){const a=p.pts[Math.max(0,k-1)],b=p.pts[Math.min(n-1,k+1)];let tx=b[0]-a[0],tz=b[1]-a[1];const l=Math.hypot(tx,tz)||1;tx/=l;tz/=l;
+        const [x,z]=p.pts[k];pos.set([x-tz*W,Y,z+tx*W,x+tz*W,Y,z-tx*W],k*6);
+        if(k<n-1)idx.push(2*k,2*k+1,2*k+2,2*k+1,2*k+3,2*k+2);}
+      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));geo.setIndex(idx);geo.setDrawRange(0,0);
+      const mat=new T.MeshBasicMaterial({color:PATH_COL[p.type]??0xffffff,transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,side:T.DoubleSide});
+      p.mesh=new T.Mesh(geo,mat);p.mesh.renderOrder=3;p.mesh.frustumCulled=false;g.add(p.mesh);}
+    scene.add(g);replayPaths={g,list:keep};
+  }
+  function updatePaths(t){
+    if(!replayPaths)return;
+    for(const p of replayPaths.list){let k=0;while(k<p.pts.length&&p.pts[k][2]<=t)k++;p.mesh.geometry.setDrawRange(0,Math.max(0,k-1)*6);}
+  }
+  // A remarkable shot is shown twice: close and slow (the strike, the key ball,
+  // the pocket), then from high above at nearly full speed with the paths drawn.
+  function posePlayers(r){
     const sh=PL[r.shooter];
     for(const pl of PL){Object.assign(pl,{fade:Math.max(pl.fade,.99),fadeTo:1,path:null,v:0,feet:null,feetNow:null,t:0});
       if(pl===sh){const st=stanceFor(pl,r.aim,r.cue0[0],r.cue0[1],0);
         Object.assign(pl,{act:'down',stLin:1,stance:1,sitLin:0,aim:r.aim,cue:r.cue0,pull:0,goal:{kind:'shot'},
           x:(st.feet[0].x+st.feet[1].x)/2,z:(st.feet[0].z+st.feet[1].z)/2,yaw:Math.atan2(st.F.x,st.F.z)});pl.w.sit=0;pl.w.walk=0;}
       else{Object.assign(pl,{act:'sit',stLin:0,stance:0,sitLin:1,x:CHAIRS[pl.i][0],z:CHAIRS[pl.i][1],yaw:0,goal:chairGoal(pl.i)});pl.w.walk=0;}}
+  }
+  function playReplay(r,label,onEnd,kind){
+    const d=r.d||drama(r),last=r.frames[r.frames.length-1].t;
+    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,reacted:0,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot,
+      pass:1,twoPass:kind==='shot'&&last<6.5});
+    buildPaths(r,d.key);
+    // The replay is a cut-away: the players are posed for the recorded shot and
+    // put back exactly as they were when it ends.
+    if(!cine.snap)cine.snap=playersSnapshot();
+    posePlayers(r);
     replayUI.querySelector('.replay-tag b').textContent=label?'· '+label:'';
     replayUI.querySelector('.replay-title').textContent=kind==='ending'?label:'';
     document.body.classList.add('replay-on');
@@ -2582,7 +2623,7 @@
   }
   function endCine(){
     if(!cine.on)return;
-    const cb=cine.onEnd;cine.on=false;cine.data=null;
+    const cb=cine.onEnd;cine.on=false;cine.data=null;clearPaths();
     document.body.classList.remove('replay-on','intro-on','intro-late');
     playersRestore(cine.snap);cine.snap=null;
     ai.thinkUntil=Math.max(ai.thinkUntil,performance.now()+700);
@@ -2599,7 +2640,13 @@
     const cue0=new T.Vector3(r.cue0[0],BALL_Y,r.cue0[1]);
     const pot=cine.keyPot,tPot=pot?pot.t:null,end=cine.dur;
     let pos,look,fov=38,phase;
-    if(t<.22){phase='strike';
+    if(cine.pass===2){phase='above';   // high over the play, from behind the shot, drifting slowly round
+      let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of (replayPaths?replayPaths.list:[]))for(const q of p.pts){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);z0=Math.min(z0,q[1]);z1=Math.max(z1,q[1]);}
+      if(x0>x1){x0=-HX;x1=HX;z0=-HZ;z1=HZ;}
+      const c=new T.Vector3((x0+x1)/2,CLOTH_Y,(z0+z1)/2),ext=Math.max(.7,Math.hypot(x1-x0,z1-z0)*.62+.25),el=1.05,swing=(t-1)*.05;
+      const back=new T.Vector3(-Math.cos(aim+swing),0,-Math.sin(aim+swing)),d=ext/Math.tan(19*PI/180);
+      pos=c.clone().addScaledVector(back,d*Math.cos(el)).add(_v4.set(0,d*Math.sin(el),0));look=c;fov=38;}
+    else if(t<.22){phase='strike';
       const side=Math.abs(cue0.z+Rt.z*1.2)<OUT_Z+2.5?1:-1;
       pos=cue0.clone().addScaledVector(F,-.55).addScaledVector(Rt,1.25*side).add(_v4.set(0,.42,0));
       look=cue0.clone().addScaledVector(F,-.5).add(_v4.set(0,.16,0));fov=40;}
@@ -2647,18 +2694,22 @@
     if(cine.kind==='intro')return updateIntro(dt);
     if(cine.kind==='opening')return updateOpening(dt);
     const r=cine.data,tPot=cine.keyPot?cine.keyPot.t:null;
-    const slow=cine.t<0?.85:tPot!==null&&Math.abs(cine.t-tPot)<.5?.28:.5;
+    const slow=cine.pass===2?(cine.t<0?1:.9):cine.t<0?.85:tPot!==null&&Math.abs(cine.t-tPot)<.5?.28:.5;
     const prev=cine.t;cine.t+=dt*slow;
+    if(cine.twoPass&&cine.pass===1&&cine.t>cine.dur+.3){   // the second angle: from above, the paths drawn again from the start
+      cine.pass=2;cine.t=-.45;cine.cut=true;posePlayers(r);
+      replayUI.querySelector('.replay-tag b').textContent=(cine.label?'· '+cine.label+' ':'')+'· FROM ABOVE';}
+    updatePaths(cine.t);
     if(prev>=0||cine.t>=0)replaySounds(Math.max(prev,-1),cine.t);
     const sh=PL[cine.shooter];
     if(sh){sh.pull=cueReplayPull(cine.t);
       if(cine.t>.5&&sh.goal.kind==='shot')sh.goal={kind:'hold'};      // stands up and watches it go
       const reactAt=cine.dur+.15;
-      if(cine.t>reactAt&&cine.react&&!cine.reacted&&sh.stLin<=0){cine.reacted=1;   // his reaction, and the room's: different every time
+      if(cine.t>reactAt&&cine.react&&!cine.reacted&&sh.stLin<=0&&(!cine.twoPass||cine.pass===2)){cine.reacted=1;   // his reaction, and the room's: different every time
         greetCrowd(cine.shooter,reactProfile(cine.shooter)==='composed'?['nod','acknowledge','salute']:['fistpump','acknowledge','salute','satisfied','wave','nod']);
         crowdReact('cheer');if(cine.kind==='ending')sound('frame');else sound('cheer');}}
     replayCamera(dt);
-    if(cine.t>cine.dur+(cine.react?2.6:1.0))endCine();
+    if(cine.t>cine.dur+(cine.react?2.6:1.0)&&(!cine.twoPass||cine.pass===2))endCine();
     return true;
   }
   // The cue drawn in replays (the live cue code draws the cue for play).
@@ -2928,17 +2979,36 @@
     else if(kind==='gasp')sound('gasp',.43);
   }
   // ---- CAMERA ---------------------------------------------------------------
-  // PLAYER VIEW stands behind the cue ball looking along your aim (move the
-  // mouse sideways to turn the aim; click a ball to aim straight at it). The TV
-  // cameras show the whole table. AUTO DIRECTOR picks for you: the player view
-  // while you aim, a view of the D with the white in hand, a view along the
-  // opponent's line while it gets down on a shot, and a high TV angle while
-  // the balls run. The picture is framed in the space above the shot controls.
-  let autoCamera=true, railFadeEnabled=true, focusPicking=false;
-  const cam={az:-PI/2,el:.5,radius:5.0,mode:1,fov:30,follow:false,zoom:1,curZoom:1,
-    curAz:-PI/2,curEl:.5,curRadius:5.0,curFov:30,target:[0,-.10,0],curTarget:[0,-.10,0],focusName:"TABLE CENTRE",shotKey:'',runSide:-1};
+  // One controller drives the picture. Four views, from the buttons, C (next
+  // view) and P (back to aiming):
+  //   AIM   behind the cue ball along your aim: the view to play from. It frames
+  //         the whole shot and holds that framing while you turn, so it never
+  //         pumps in and out; wheel or pinch for closer or wider, a right drag
+  //         (two fingers on a phone) raises it or swings it round a little. It
+  //         never turns away from your aim by itself.
+  //   TOP   the whole table from above, fitted to the screen (turned upright on
+  //         a tall screen); wheel zooms to the pointer, a right drag pans.
+  //   TV    the broadcast angles (◀ ▶ to change).
+  //   FREE  orbit any point: drag to turn, right drag to pan, wheel to zoom;
+  //         focus on the cue ball, a ball (double-click it) or any spot.
+  // Over the view, the shot follow (AUTO CAM): when a shot needs it, the camera
+  // makes one move to a broadcast angle while the balls run and comes back to
+  // your view when they have stopped. Every motion is eased by the frame time,
+  // so it feels the same at any frame rate; a change of view is one smooth move
+  // along an arc, turning by quaternions; the camera keeps out of the table, the
+  // floor and the stands, and anyone standing between it and the play fades.
+  let autoCamera=true,railFadeEnabled=true,focusPicking=false;
+  const CAM_DEFAULTS={rot:1,zoom:1,pan:1,smooth:.55,trans:.75,zoomMin:.45,zoomMax:2.6,elMin:.09,elMax:1.55,invertY:false,autoTv:true};
+  const camSet=Object.assign({},CAM_DEFAULTS);
+  try{const s=JSON.parse(localStorage.getItem('velvet.camera')||'null');
+    if(s&&typeof s==='object')for(const k in CAM_DEFAULTS)if(typeof s[k]===typeof CAM_DEFAULTS[k])camSet[k]=s[k];}catch(e){}
+  function saveCamSet(){try{localStorage.setItem('velvet.camera',JSON.stringify(camSet));}catch(e){}}
+  const cam={az:-PI/2,el:.5,radius:5.0,mode:0,fov:30,follow:true,zoom:1,curZoom:1,
+    curAz:-PI/2,curEl:.5,curRadius:5.0,curFov:30,target:[0,-.10,0],curTarget:[0,-.10,0],focusName:'TABLE CENTRE',shotKey:'',runSide:-1,
+    view:'aim',tvPreset:1,user:{zoom:1,el:0,side:0},topZoom:1,topPan:[0,0],tvZoom:1,tvt:[0,0],
+    blend:null,snap:true,key:'',sf:null,baseFov:30,tvWas:false};
   const presets=[
-    {name:'PLAYER VIEW',n:'01',follow:true,el:.36,radius:1.55,fov:44},
+    {name:'AIMING CAMERA',n:'01',follow:true,el:.36,radius:1.55,fov:44},
     {az:-PI/2,el:.62,radius:4.5,name:'TV MAIN',n:'02'},
     {az:0,el:1.558,radius:4.75,name:'OVERHEAD',n:'03'},
     {az:PI/2,el:.62,radius:4.5,name:'TV REVERSE',n:'04'},
@@ -2946,28 +3016,95 @@
     {az:.42,el:.86,radius:5.15,name:'THREE-QUARTER',n:'06'},
     {az:-.48,el:1.30,radius:4.6,name:'HIGH ANGLE',n:'07'}
   ];
-  const OVERHEAD_PRESET=2,PLAYER_PRESET=0;
+  const OVERHEAD_PRESET=2,PLAYER_PRESET=0,VIEWS=['aim','top','tv','free'];
+  const VIEW_LABEL={aim:['AIMING CAMERA','01'],top:['OVERHEAD','03'],free:['FREE CAMERA','◎']};
   const distFor=(r,fov)=>r*Math.tan(21*PI/180)/Math.tan(fov/2*PI/180);
+  const setTarget=(x,y,z)=>{const t=cam.target;t[0]=x;t[1]=y;t[2]=z;};
+  const viewOfPreset=i=>i<0?'free':i===PLAYER_PRESET?'aim':i===OVERHEAD_PRESET?'top':'tv';
   function cameraLabel(name,n){$('camera-tag').innerHTML='<div class="camera-cross">⌗</div><span>'+name+' <b>'+n+'</b></span>';}
-  function setCamera(mode){
-    autoCamera=false;cam.mode=(mode+presets.length)%presets.length;
-    const a=presets[cam.mode];cam.follow=!!a.follow;cam.fov=a.fov||30;
-    if(!a.follow){Object.assign(cam,{az:a.az,el:a.el,radius:a.radius});cam.target=[0,-.10,0];}
-    $('auto-camera-button').classList.remove('active');$('auto-camera-button').setAttribute('aria-pressed','false');
-    cameraLabel(a.name,a.n);
+  function labelView(){
+    if(cam.view==='tv'){const p=presets[cam.tvPreset];cameraLabel(p.name,p.n);}
+    else if(cam.view==='free'&&cam.focusName&&cam.focusName!=='TABLE CENTRE')cameraLabel('FOCUS · '+cam.focusName,'◉');
+    else{const l=VIEW_LABEL[cam.view];cameraLabel(l[0],l[1]);}
+    paintCamUI();
   }
-  function setAutoCamera(on){
-    autoCamera=on; $('auto-camera-button').classList.toggle('active',on);
-    $('auto-camera-button').setAttribute('aria-pressed',String(on));
-    if(on){cameraLabel('AUTO DIRECTOR','●');cam.shotKey='';}
-    else{cam.follow=false;cameraLabel('FREE CAMERA','◎');}
+  function paintCamUI(){
+    document.querySelector('.camera-switcher')?.classList.toggle('tv-on',cam.view==='tv');
+    document.querySelectorAll('[data-camview]').forEach(b=>{const on=b.dataset.camview===cam.view;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
+    const a=$('auto-camera-button');if(a){a.classList.toggle('active',camSet.autoTv);a.setAttribute('aria-pressed',String(camSet.autoTv));}
+    const tg=(id,on,txt)=>{const b=$(id);if(!b)return;b.classList.toggle('active',!!on);b.setAttribute('aria-pressed',String(!!on));if(txt)b.textContent=txt;};
+    tg('cam-autotv',camSet.autoTv,'AUTO CAM ON SHOTS · '+(camSet.autoTv?'ON':'OFF'));
+    tg('cam-invert',camSet.invertY,'INVERT VERTICAL · '+(camSet.invertY?'ON':'OFF'));
+    for(const k of ['rot','zoom','pan','smooth','trans']){const e=$('cam-'+k);if(e&&document.activeElement!==e)e.value=String(camSet[k]);
+      const o=$('cam-'+k+'-v');if(o)o.textContent=k==='trans'?camSet[k].toFixed(2)+' s':k==='smooth'?Math.round(camSet[k]*100)+'%':camSet[k].toFixed(2)+'×';}
   }
-  function focusOn(x,z,label='CUSTOM POINT'){
-    setAutoCamera(false);cam.target=[clamp(x,-HX-.48,HX+.48),-.06,clamp(z,-HZ-.55,HZ+.55)];
+  // ---- changing view ----
+  // A smooth move: from where the camera is now to where the new view wants it,
+  // eased in and out, along an arc that lifts over the table, turning by slerp.
+  const _bq0=new T.Quaternion(),_bq1=new T.Quaternion(),_bp1=new T.Vector3(),_bm=new T.Matrix4(),_bv=new T.Vector3(),_bt=new T.Vector3(),_bup=new T.Vector3(0,1,0);
+  function startBlend(){
+    if(!camera||!camera.position)return;
+    if(cam.blend){cam.blend.p0.copy(camera.position);cam.blend.q0.copy(camera.quaternion);cam.blend.f0=cam.baseFov;cam.blend.t=0;}
+    else cam.blend={t:0,p0:camera.position.clone(),q0:camera.quaternion.clone(),f0:cam.baseFov};
+    cam.blend.dur=Math.max(.05,camSet.trans);cam.snap=true;
+  }
+  // how: undefined = a smooth move; 'cut' = at once; 'keep' = stay where the camera is (to take it by hand)
+  function goView(v,how){
+    if(!VIEWS.includes(v))v='aim';
+    const was=cam.view;cam.view=v;cam.follow=v==='aim';autoCamera=v==='aim';
+    cam.mode=v==='aim'?PLAYER_PRESET:v==='top'?OVERHEAD_PRESET:v==='tv'?cam.tvPreset:-1;
+    if(v==='free'&&(was!=='free'||how==='keep'))adoptCurrentPose();
+    if(v==='top'&&was!=='top'){cam.topZoom=1;cam.topPan=[0,0];}
+    if(cam.sf)cam.sf.user=true;                       // a view you choose now replaces the shot follow
+    if(how==='cut'){cam.blend=null;cam.snap=true;}
+    else if(how!=='keep'&&(was!==v||v==='tv'))startBlend();
+    if(v!=='free'){cam.focusName=v==='aim'?'AUTO FOLLOW':'TABLE CENTRE';const fc=$('focus-current');if(fc)fc.textContent=cam.focusName;}
+    labelView();
+  }
+  function setCamera(i,how){
+    const n=presets.length;i=((Math.round(i)%n)+n)%n;
+    const v=viewOfPreset(i);if(v==='tv'){cam.tvPreset=i;cam.tvZoom=1;}
+    goView(v,how);
+  }
+  function cycleView(d=1){const i=VIEWS.indexOf(cam.view);goView(VIEWS[(i+d+VIEWS.length*4)%VIEWS.length]);}
+  // ◀ ▶ step through the broadcast angles (from another view: to the last one used)
+  function tvAngle(d){
+    const tvs=presets.map((p,i)=>i).filter(i=>viewOfPreset(i)==='tv');let k=Math.max(0,tvs.indexOf(cam.tvPreset));
+    if(cam.view==='tv')k=(k+d+tvs.length)%tvs.length;
+    setCamera(tvs[k]);
+  }
+  // the director (AUTO) or your own camera (FREE), as before
+  function setAutoCamera(on){goView(on?'aim':'free',on?undefined:'keep');}
+  function toggleAutoTv(){
+    camSet.autoTv=!camSet.autoTv;saveCamSet();paintCamUI();
+    message('AUTO CAM · '+(camSet.autoTv?'ON':'OFF'),camSet.autoTv?'THE CAMERA FOLLOWS EACH SHOT, THEN COMES BACK':'THE CAMERA STAYS ON YOUR VIEW DURING SHOTS',1700);
+  }
+  function resetCamera(){
+    const v=cam.view;
+    if(v==='aim')cam.user={zoom:1,el:0,side:0};
+    else if(v==='top'){cam.topZoom=1;cam.topPan=[0,0];}
+    else if(v==='tv'){cam.tvZoom=1;cam.tvt=[0,0];}
+    else{Object.assign(cam,{az:-PI/2,el:.62,radius:4.5,fov:30,zoom:1});cam.target=[0,-.06,0];cam.focusName='TABLE CENTRE';const fc=$('focus-current');if(fc)fc.textContent='TABLE CENTRE';}
+    startBlend();labelView();
+  }
+  function focusOn(x,z,label='CUSTOM POINT',y=-.06){
+    if(cam.view!=='free')goView('free','keep');
+    cam.target=[clamp(x,-HX-.48,HX+.48),y,clamp(z,-HZ-.55,HZ+.55)];
     cam.focusName=label;focusPicking=false;
     $('focus-pick').classList.remove('active');$('focus-current').textContent=label;
-    cameraLabel('FOCUS · '+label,'◉');
+    labelView();
   }
+  // Take the camera by hand from wherever it is: its spot and the point it looks at become the orbit.
+  function adoptCurrentPose(){
+    const p=camera.position;camera.getWorldDirection(_bv);
+    let d=3.2;if(_bv.y<-.04){const t=(CLOTH_Y-p.y)/_bv.y;if(t>.35&&t<14)d=t;}
+    const tx=p.x+_bv.x*d,ty=p.y+_bv.y*d,tz=p.z+_bv.z*d,fov=cam.baseFov||cam.curFov;
+    cam.target=[tx,ty,tz];cam.curTarget=[tx,ty,tz];
+    cam.az=cam.curAz=Math.atan2(p.x-tx,p.z-tz);cam.curEl=Math.asin(clamp((p.y-ty)/d,-1,1));cam.el=clamp(cam.curEl,camSet.elMin,camSet.elMax);
+    cam.fov=cam.curFov=fov;cam.zoom=cam.curZoom=1;cam.radius=cam.curRadius=d/distFor(1,fov);
+    cam.blend=null;cam.snap=false;
+  }
+  // ---- what each view wants ----
   // Behind the cue ball along an aim, looking a little ahead of it.
   function lineView(aim,el,radius,fov,ahead){
     const cb=cueBall();if(!cb)return false;
@@ -2976,33 +3113,33 @@
     cam.target=[cb.x+dx*ahead,CLOTH_Y,cb.z+dz*ahead];
     return true;
   }
-  // Aiming: the camera stands behind the cue ball on the line of aim and
-  // frames the whole shot - the cue ball, the ball it will hit and where that
-  // ball is going (the pocket, or the cushion) - close for a short shot,
-  // higher and wider for a long one, so nothing has to be dragged into view.
   function railHit(x,z,dx,dz){
     let t=4;if(dx>1e-6)t=Math.min(t,(HX-x)/dx);else if(dx<-1e-6)t=Math.min(t,(-HX-x)/dx);
     if(dz>1e-6)t=Math.min(t,(HZ-z)/dz);else if(dz<-1e-6)t=Math.min(t,(-HZ-z)/dz);
     return [x+dx*Math.max(0,t),z+dz*Math.max(0,t)];
   }
+  // the cue ball, the ball it will hit and where that ball goes (the pocket, or the cushion)
   function aimTargets(aim){
     const cb=cueBall();if(!cb)return null;
     const dx=Math.cos(aim),dz=Math.sin(aim),pts=[[cb.x,cb.z]];let hit=null,ht=1e9;
     for(const b of balls){if(b.pocketed||b===cb)continue;
       const ox=b.x-cb.x,oz=b.z-cb.z,t=ox*dx+oz*dz;if(t<=0)continue;
       const d2=ox*ox+oz*oz-t*t;if(d2>=4*R*R)continue;const tc=t-Math.sqrt(4*R*R-d2);if(tc<ht){ht=tc;hit=b;}}
-    // with no pocket in line, the far point stops short of the cushion so short shots fill the frame
     const near=(x,z,q,m)=>{const d=Math.hypot(q[0]-x,q[1]-z);return d<=m?q:[x+(q[0]-x)*m/d,z+(q[1]-z)*m/d];};
     if(!hit){pts.push(near(cb.x,cb.z,railHit(cb.x,cb.z,dx,dz),2.2));return pts;}
     let nx=hit.x-(cb.x+dx*ht),nz=hit.z-(cb.z+dz*ht);const nl=Math.hypot(nx,nz)||1;nx/=nl;nz/=nl;
     pts.push([hit.x,hit.z]);
-    let best=null,bd=.16;   // the pocket the object ball is sent towards, if any
+    let best=null,bd=.16;
     for(const q of POCKETS){const px=q.x-hit.x,pz=q.z-hit.z,t=px*nx+pz*nz;if(t<=0)continue;const off=Math.abs(px*nz-pz*nx);if(off<bd){bd=off;best=q;}}
     pts.push(best?[best.x,best.z]:near(hit.x,hit.z,railHit(hit.x,hit.z,nx,nz),.7));
     return pts;
   }
-  function shotView(aim){
-    const pts=aimTargets(aim);if(!pts)return false;
+  // The framing of a shot in the aim's own frame: how high, how far, and the
+  // point looked at (along and across the aim from the cue ball). Close for a
+  // short shot, higher and wider for a long one, so nothing has to be dragged
+  // into view; clear of the screen edges, the top bar and the shot controls.
+  function shotFrame(aim){
+    const pts=aimTargets(aim);if(!pts)return null;
     const cb=pts[0],far=pts[pts.length-1],D=Math.hypot(far[0]-cb[0],far[1]-cb[1]);
     const a=Math.atan2(-Math.cos(aim),-Math.sin(aim)),el=clamp(.3+.1*D,.3,.6),fov=42;
     const tx=lerp(cb[0],far[0],.42),tz=lerp(cb[1],far[1],.42);
@@ -3010,35 +3147,168 @@
     const fits=d=>{const ex=tx+d*ce*sa,ey=CLOTH_Y+d*se,ez=tz+d*ce*ca;
       for(const q of pts){const vx=q[0]-ex,vy=BALL_Y-ey,vz=q[1]-ez,zf=-(vx*ce*sa+vy*se+vz*ce*ca);if(zf<.15)return false;
         const nx=(vx*ca-vz*sa)/(zf*tf*asp),ny=(-vx*se*sa+vy*ce-vz*se*ca)/(zf*tf);
-        if(Math.abs(nx)>.8||ny>.6||ny<-.5)return false;}   // clear of the screen edges, the top bar and the shot controls
+        if(Math.abs(nx)>.8||ny>.6||ny<-.5)return false;}
       return true;};
     let lo=.5,hi=7;for(let i=0;i<18;i++){const m=(lo+hi)/2;if(fits(m))hi=m;else lo=m;}
-    cam.az=a;cam.el=el;cam.fov=fov;cam.radius=hi/distFor(1,fov);cam.target=[tx,CLOTH_Y,tz];
+    const dx=Math.cos(aim),dz=Math.sin(aim),ox=tx-cb[0],oz=tz-cb[1];
+    return {el,fov,dist:hi,ahead:ox*dx+oz*dz,side:-ox*dz+oz*dx};
+  }
+  const af={aim:null,still:0,f:null};
+  // The aiming camera: turns with the aim at once, but changes its framing only
+  // once the aim has settled - and then over a moment - so it never breathes.
+  function aimPose(dt,aim){
+    const cb=cueBall();if(!cb)return false;
+    const turn=af.aim==null?9:Math.abs(Math.atan2(Math.sin(aim-af.aim),Math.cos(aim-af.aim)));af.aim=aim;
+    af.still=turn<.0004+.002*dt?af.still+dt:0;
+    if(!af.f||cam.snap||af.still>.16){const want=shotFrame(aim);
+      if(want){if(!af.f||cam.snap)af.f=want;else{const k=1-Math.exp(-dt*3.2);for(const key of ['el','fov','dist','ahead','side'])af.f[key]+=(want[key]-af.f[key])*k;}}}
+    if(!af.f)return false;
+    // the whole view turns as one piece round the cue ball, following a smoothed aim: never a chord, never a wobble
+    if(af.sAim==null||cam.snap)af.sAim=aim;else af.sAim+=Math.atan2(Math.sin(aim-af.sAim),Math.cos(aim-af.sAim))*(1-Math.exp(-dt*camRate()*1.6));
+    const f=af.f,sa=af.sAim,dx=Math.cos(sa),dz=Math.sin(sa),u=cam.user;
+    cam.az=Math.atan2(-dx,-dz)+u.side;cam.el=clamp(f.el+u.el,camSet.elMin,camSet.elMax);
+    cam.fov=f.fov;cam.zoom=u.zoom;cam.radius=f.dist/distFor(1,f.fov);
+    setTarget(cb.x+dx*f.ahead-dz*f.side,CLOTH_Y,cb.z+dz*f.ahead+dx*f.side);
+    cam.rigid=true;
     return true;
   }
   function tvView(side,el=.64,radius=4.4,fov=30){
-    cam.az=side<0?-PI/2:PI/2;cam.el=el;cam.radius=radius;cam.fov=fov;cam.target=[0,-.10,0];
+    cam.az=side<0?-PI/2:PI/2;cam.el=el;cam.radius=radius;cam.fov=fov;setTarget(0,-.10,0);cam.zoom=1;
   }
-  function directorPlan(){
-    if(!state.started||state.finished)return tvView(-1,.62,4.5,30);
+  // The whole table from above, as large as the space between the top bar and the shot controls allows.
+  let dockTop=0;
+  function topPose(){
+    const port=height>width*1.05,fov=34,asp=width/Math.max(1,height);
+    const ex=OUT_X+.14,ez=OUT_Z+.14,hw=port?ez:ex,hh=port?ex:ez;
+    const free=clamp(((dockTop>0?dockTop:height)-64)/Math.max(1,height),.55,1),t=Math.tan(fov*PI/360);
+    const d=Math.max(hh/(t*free),hw/(t*asp*.96));
+    // then a correction from where the table's corners really land on the screen (side panels, the shift above the controls)
+    if(cam.view==='top'&&!cam.blend&&Math.abs(Math.atan2(Math.sin(cam.curAz-(port?-PI/2:0)),Math.cos(cam.curAz-(port?-PI/2:0))))<.02&&cam.curEl>1.5){
+      camera.updateMatrixWorld();let m=0;
+      for(const [x,z] of [[ex-.1,ez-.1],[-ex+.1,ez-.1],[ex-.1,-ez+.1],[-ex+.1,-ez+.1]]){_bv.set(x-cam.topPan[0]*0,CLOTH_Y,z).project(camera);m=Math.max(m,Math.abs(_bv.x),Math.abs(_bv.y)*(_bv.y>0?1:1));}
+      const zm=cam.topZoom;if(zm>.99&&zm<1.01&&isFinite(m)&&m>.05)cam.topK=clamp((cam.topK||1)*Math.pow(m/.93,.35),.6,2.5);}
+    cam.az=port?-PI/2:0;cam.el=1.5585;cam.fov=fov;cam.zoom=(cam.topK||1)/cam.topZoom;cam.radius=d/distFor(1,fov);
+    setTarget(cam.topPan[0],CLOTH_Y,cam.topPan[1]);
+  }
+  // The broadcast angles; while the balls run the picture keeps them in view,
+  // drifting a little towards the play, never cutting.
+  function playDrift(dt,s){
+    let mx=0,mz=0,n=0,fast=0;
+    for(const b of balls){if(b.pocketed)continue;const v=Math.hypot(b.vx,b.vz);if(v>.04){mx+=b.x;mz+=b.z;n++;fast=Math.max(fast,v);}}
+    const tx=n?clamp(mx/n*.35,-HX*.3,HX*.3):0,tz=n?clamp(mz/n*.35,-HZ*.25,HZ*.25):0,k=1-Math.exp(-dt*1.3);
+    s.tvt[0]+=(tx-s.tvt[0])*k;s.tvt[1]+=(tz-s.tvt[1])*k;
+    const close=n===1&&fast<.45?.86:1;s.close=(s.close??1)+(close-(s.close??1))*(1-Math.exp(-dt*.9));   // one slow ball: a touch closer
+  }
+  function tvPose(dt){
+    const p=presets[cam.tvPreset]||presets[1];
+    if(state.inShot)playDrift(dt,cam);else{const k=1-Math.exp(-dt*1.5);cam.tvt[0]*=1-k;cam.tvt[1]*=1-k;cam.close=(cam.close??1)+(1-(cam.close??1))*k;}
+    Object.assign(cam,{az:p.az,el:p.el,radius:p.radius*(cam.close??1),fov:p.fov||30,zoom:cam.tvZoom});
+    setTarget(cam.tvt[0],-.10,cam.tvt[1]);
+  }
+  // ---- the shot follow ----
+  // At the strike the view stays as it was; if the shot will carry the play out
+  // of it, one smooth move to the broadcast angle the balls run away from (a
+  // high side angle when they run across the table); back when they stop.
+  function pickBroadcast(){
+    const sh=state.shot,cb=cueBall(),sp=cb?Math.hypot(cb.vx,cb.vz):0;
+    let dx=Math.cos(sh.angle),dz=Math.sin(sh.angle),reach=sp;
+    const pts=aimTargets(sh.angle);
+    if(pts&&pts.length>2){const a=pts[1],b=pts[2],l=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      if(l>.05){dx=(b[0]-a[0])/l;dz=(b[1]-a[1])/l;}reach=Math.max(reach,Math.hypot(a[0]-pts[0][0],a[1]-pts[0][1])+l*.5);}
+    const across=Math.abs(dz)>Math.abs(dx)*1.35;
+    return {need:sp>.75||reach>.6,across,side:across?(dz>=0?-1:1):(dx>=0?-1:1)};
+  }
+  function broadcastPose(s,dt){
+    if(s.across){cam.az=s.side<0?PI:0;cam.el=.92;cam.radius=4.0;}else{cam.az=s.side<0?-PI/2:PI/2;cam.el=.72;cam.radius=4.35;}
+    cam.fov=30;cam.zoom=1;playDrift(dt,s);cam.radius*=s.close;setTarget(s.tvt[0],-.10,s.tvt[1]);
+  }
+  function shotFollow(dt){
+    const v=cam.view,on=camSet.autoTv&&(v==='aim'||v==='free');
+    let s=cam.sf;
     if(state.inShot&&state.shot){
-      // Cut once per shot to the TV side the balls run away from.
-      const key=state.shotCount+'';
-      if(cam.shotKey!==key){cam.shotKey=key;cam.runSide=Math.cos(state.shot.angle)>=0?-1:1;}
-      return tvView(cam.runSide,.72,4.35,30);
+      if(!s||s.key!==state.shotCount){s=cam.sf={key:state.shotCount,t:0,phase:'hold',user:false,after:0,tvt:[cam.target[0]*.2,cam.target[2]*.2],close:1,...pickBroadcast()};}
+      s.t+=dt;
+      if(s.user||!on)return null;
+      if(s.phase==='hold'){if(!(s.need&&s.t>.42))return null;s.phase='tv';
+        if(v==='free')s.saved={az:cam.az,el:cam.el,radius:cam.radius,fov:cam.fov,zoom:cam.zoom,target:cam.target.slice()};}
+      broadcastPose(s,dt);return 'shot';
     }
-    cam.shotKey='';
+    if(s&&s.phase==='tv'&&!s.user&&on&&s.after<.6){s.after+=dt;broadcastPose(s,dt);return 'shot';}
+    if(s){if(s.saved&&v==='free'){Object.assign(cam,s.saved);cam.target=s.saved.target;startBlend();}cam.sf=null;}
+    return null;
+  }
+  // ---- the plan for this frame: what the active view wants ----
+  function planView(dt){
+    cam.rigid=false;
+    const v=cam.view,sf=shotFollow(dt);if(sf)return sf;
+    if(v==='top'){topPose();return 'top';}
+    if(v==='tv'){tvPose(dt);return 'tv';}
+    if(v==='free')return 'free';
+    // AIM: the director of the aiming camera
+    if(!state.started||state.finished){tvView(-1,.62,4.5,30);return 'menu';}
+    if(state.inShot)return cam.key;                       // held exactly where it was at the strike
     if(humanTurn()){
-      if(state.ballInHand){cam.az=-PI/2;cam.el=1.0;cam.radius=4.95;cam.fov=42;cam.target=[-.1,CLOTH_Y,0];return;}
-      return shotView(state.aim)||lineView(state.aim,.36,1.55,44,.55);
+      if(state.ballInHand){cam.az=-PI/2;cam.el=1.0;cam.radius=4.95;cam.fov=42;cam.zoom=cam.user.zoom;setTarget(-.1,CLOTH_Y,0);return 'hand';}
+      if(aimPose(dt,state.aim))return 'aim'+state.current;
+      tvView(-1);return 'menu';
     }
     if(ai.plan){const a=ai.plan.aim,cb=cueBall(),fx=Math.cos(a),fz=Math.sin(a);
       // side-on to the opponent's line: the player and the shot both in view
-      cam.az=Math.atan2(-fz,fx);cam.el=.66;cam.radius=2.7;cam.fov=40;cam.target=[cb.x+fx*.55,CLOTH_Y,cb.z+fz*.55];return;}
-    const cb=cueBall();tvView(cb&&cb.x>HX*.4?1:-1);
+      cam.az=Math.atan2(-fz,fx);cam.el=.66;cam.radius=2.7;cam.fov=40;cam.zoom=1;setTarget(cb.x+fx*.55,CLOTH_Y,cb.z+fz*.55);return 'plan';}
+    const cb=cueBall(),side=cb&&cb.x>HX*.4?1:-1;tvView(side);return 'wait'+side;
   }
+  // ---- keeping out of things ----
+  // The lowest the eye may be over a spot: clear of the cloth and the balls,
+  // over the rails, and sloping down outside the table so nothing jumps.
+  function minEyeY(x,z){
+    const ax=Math.abs(x),az=Math.abs(z),d=Math.max(ax-(OUT_X+.05),az-(OUT_Z+.05));
+    const top=(ax<IN_X-.01&&az<IN_Z-.01)?BALL_Y+R+.075:RAIL_TOP+.075;
+    return d<=0?top:Math.max(FLOOR_Y+.32,top-d*1.6);
+  }
+  // How far out from the table the camera may go in each direction before the
+  // stands, walls, boards or chairs, at a few heights; worked out once per
+  // arena, a few rays a frame.
+  const arenaRing={key:'',r:null,todo:0,targets:null};
+  const RING_N=48,RING_H=[.55,1.15,1.85,2.65,3.6],_rc=new T.Raycaster(),_rgO=new T.Vector3(),_rgD=new T.Vector3();
+  function ringTick(){
+    const key=(typeof venueId!=='undefined'?venueId:'')+':'+(arenaGroup?arenaGroup.children.length:0)+':'+(stage&&stage.group?1:0);
+    if(arenaRing.key!==key){arenaRing.key=key;arenaRing.r=RING_H.map(()=>new Array(RING_N).fill(15));arenaRing.todo=0;arenaRing.targets=[];
+      const add=g=>g&&g.traverse(m=>{if((m.isMesh||m.isInstancedMesh)&&!m.isSkinnedMesh)arenaRing.targets.push(m);});
+      add(arenaGroup);if(stage&&stage.group)add(stage.group);}
+    if(arenaRing.todo>=RING_N*RING_H.length)return;
+    for(let n=0;n<10&&arenaRing.todo<RING_N*RING_H.length;n++,arenaRing.todo++){
+      const i=arenaRing.todo%RING_N,h=Math.floor(arenaRing.todo/RING_N),a=i/RING_N*TAU;
+      _rgO.set(0,FLOOR_Y+RING_H[h],0);_rgD.set(Math.cos(a),0,Math.sin(a));_rc.set(_rgO,_rgD);_rc.far=15;
+      let hits=[];try{hits=_rc.intersectObjects(arenaRing.targets,false);}catch(e){}
+      for(const hit of hits){const p=hit.point;if(Math.abs(p.x)<OUT_X+.55&&Math.abs(p.z)<OUT_Z+.55)continue;   // the table's own furniture
+        arenaRing.r[h][i]=hit.distance;break;}
+    }
+  }
+  function ringLimit(x,y,z){
+    if(!arenaRing.r)return 15;
+    const f=((Math.atan2(z,x)/TAU*RING_N)%RING_N+RING_N)%RING_N,i=Math.floor(f)%RING_N,u=f-Math.floor(f),j=(i+1)%RING_N;
+    const at=h=>lerp(arenaRing.r[h][i],arenaRing.r[h][j],u),hy=y-FLOOR_Y;
+    if(hy<=RING_H[0])return at(0);
+    for(let h=1;h<RING_H.length;h++)if(hy<=RING_H[h]){const w=(hy-RING_H[h-1])/(RING_H[h]-RING_H[h-1]);return Math.min(at(h-1),lerp(at(h-1),at(h),w));}
+    return at(RING_H.length-1);
+  }
+  const inRing=(x,y,z)=>Math.hypot(x,z)<=Math.max(OUT_X+.6,ringLimit(x,y,z)-.32);
+  // p: [x,y,z] or a Vector3. walls: also keep inside the arena, coming in along
+  // the line to the point looked at (tg), like a spring arm, so the view keeps its direction.
+  function keepOut(p,walls,tg){
+    const isV=!Array.isArray(p);let x=isV?p.x:p[0],y=isV?p.y:p[1],z=isV?p.z:p[2];
+    if(walls&&!inRing(x,y,z)){
+      if(tg&&inRing(tg[0],tg[1],tg[2])){let lo=0,hi=1;const ox=tg[0],oy=tg[1],oz=tg[2];
+        for(let i=0;i<9;i++){const m=(lo+hi)/2;if(inRing(ox+(x-ox)*m,oy+(y-oy)*m,oz+(z-oz)*m))lo=m;else hi=m;}
+        x=ox+(x-ox)*lo;y=oy+(y-oy)*lo;z=oz+(z-oz)*lo;}
+      else{const r=Math.hypot(x,z),lim=Math.max(OUT_X+.6,ringLimit(x,y,z)-.32);x*=lim/r;z*=lim/r;}}
+    y=Math.max(y,minEyeY(x,z),FLOOR_Y+.32);
+    if(isV)p.set(x,y,z);else{p[0]=x;p[1]=y;p[2]=z;}
+  }
+  // ---- the camera, every frame ----
   const dockEl=document.querySelector('.control-dock');
   let viewShift=0;
+  function camRate(){return lerp(18,3.5,clamp(camSet.smooth,0,1));}
   // ---- TV CAMERAS: a broadcast director ------------------------------------
   // With TV CAMERAS on, the opponent's turn and every shot are cut like a
   // broadcast: close on the player thinking, down the line behind the cue
@@ -3107,24 +3377,52 @@
   }
   function updateCamera(dt){
     // while you aim, the cue ball sits low in the middle of the frame: captions move aside so they never cover it
-    const aiming=!!(state.started&&!state.finished&&!state.inShot&&humanTurn()&&!state.ballInHand);
+    const aiming=!!(state.started&&!state.finished&&!state.inShot&&humanTurn()&&!state.ballInHand&&cam.view==='aim');
     if(aiming!==cam.aimingUI){cam.aimingUI=aiming;document.body.classList.toggle('aim-cam',aiming);}
-    const tvLive=tvDirect(dt);
-    if(autoCamera&&!tvLive){directorPlan();cam.focusName='AUTO FOLLOW';if($('focus-current'))$('focus-current').textContent='AUTO FOLLOW';}
-    else if(cam.follow){const p=presets[PLAYER_PRESET];
-      const aim=humanTurn()||!ai.plan?state.aim:ai.plan.aim;if(!shotView(aim))lineView(aim,p.el,p.radius,p.fov,.55);}
-    const t=1-Math.pow(cam.follow||autoCamera&&!state.inShot&&humanTurn()?.0004:.001,dt);
+    const studioOn=!!(studio&&studio.on),tvLive=!studioOn&&tvDirect(dt);
+    if(time-(cam.lastAt??time)>.25&&!tvLive&&!studioOn){startBlend();if(cam.blend)cam.blend.f0=camera.fov;}   // back from a replay or the walk-on
+    cam.lastAt=time;
+    if(cam.studioWas&&!studioOn)startBlend();cam.studioWas=studioOn;
+    if(tvLive){cam.blend=null;}
+    else if(!studioOn){
+      if(cam.tvWas){cam.snap=true;cam.blend=null;}           // back from the TV cutaways: a cut, like the cutaways
+      const key=planView(dt);
+      if(key!==cam.key){if(cam.key&&!cam.snap&&key!=='free')startBlend();if(!String(key).startsWith('aim'))af.f=null;
+        if(key==='shot')cameraLabel('AUTO CAM · FOLLOWING THE SHOT','●');else if(cam.key==='shot')labelView();
+        cam.key=key;}
+      if(cam.view==='aim'){cam.focusName='AUTO FOLLOW';const fc=$('focus-current');if(fc&&fc.textContent!=='AUTO FOLLOW')fc.textContent='AUTO FOLLOW';}
+    }
+    cam.tvWas=tvLive;
+    ringTick();
+    if(cam.snap){cam.snap=false;cam.curAz=cam.az;cam.curEl=cam.el;cam.curRadius=cam.radius;cam.curFov=cam.fov;cam.curZoom=cam.zoom;for(let j=0;j<3;j++)cam.curTarget[j]=cam.target[j];}
+    // (the aiming view smooths its aim itself and turns rigidly: its azimuth and target are taken as they are;
+    //  its height, distance and lens still ease, as everywhere else)
+    if(cam.rigid&&!tvLive&&!studioOn){cam.curAz=cam.az;for(let j=0;j<3;j++)cam.curTarget[j]=cam.target[j];}
+    const t=1-Math.exp(-dt*(studioOn?7:camRate()));
     cam.curAz+=Math.atan2(Math.sin(cam.az-cam.curAz),Math.cos(cam.az-cam.curAz))*t;
     cam.curEl=lerp(cam.curEl,cam.el,t);cam.curRadius=lerp(cam.curRadius,cam.radius,t);cam.curFov=lerp(cam.curFov,cam.fov,t);cam.curZoom=lerp(cam.curZoom,cam.zoom,t);
     for(let j=0;j<3;j++)cam.curTarget[j]=lerp(cam.curTarget[j],cam.target[j],t);
-    const r=distFor(cam.curRadius,cam.curFov)*cam.curZoom,a=cam.curAz,e=cam.curEl;
+    let r=distFor(cam.curRadius,cam.curFov)*cam.curZoom;
+    if(cam.view==='free'&&!studioOn)r=clamp(r,.38,13);
+    const a=cam.curAz,e=cam.curEl;
     eye=[cam.curTarget[0]+r*Math.cos(e)*Math.sin(a),cam.curTarget[1]+r*Math.sin(e),cam.curTarget[2]+r*Math.cos(e)*Math.cos(a)];
-    camera.position.set(eye[0],eye[1],eye[2]);camera.up.set(0,1,0);camera.lookAt(cam.curTarget[0],cam.curTarget[1],cam.curTarget[2]);
+    if(!studioOn)keepOut(eye,!tvLive&&(cam.view==='free'||cam.view==='top'||cam.view==='aim')&&!cam.sf,cam.curTarget);
+    _bp1.set(eye[0],eye[1],eye[2]);_bt.set(cam.curTarget[0],cam.curTarget[1],cam.curTarget[2]);
+    let fovNow=cam.curFov;
+    if(cam.blend&&!studioOn){const b=cam.blend;b.t+=dt;const u=clamp(b.t/b.dur,0,1),k=u*u*u*(u*(u*6-15)+10);
+      _bm.lookAt(_bp1,_bt,_bup);_bq1.setFromRotationMatrix(_bm);
+      const lift=Math.min(.9,b.p0.distanceTo(_bp1)*.18)*Math.sin(PI*k);
+      camera.position.copy(b.p0).lerp(_bp1,k);camera.position.y+=lift;keepOut(camera.position,false);
+      camera.quaternion.copy(b.q0).slerp(_bq1,k);fovNow=lerp(b.f0,cam.curFov,k);
+      if(u>=1)cam.blend=null;
+    }else{camera.position.copy(_bp1);camera.up.set(0,1,0);camera.lookAt(_bt);}
+    eye=[camera.position.x,camera.position.y,camera.position.z];cam.baseFov=fovNow;
     // Frame the table above the shot controls: shift the image up by half the
     // space they take, keeping the same scale.
-    let want=0;
+    let want=0;dockTop=0;
     if(dockEl&&state.started&&!document.body.classList.contains('hud-off')){const rc=dockEl.getBoundingClientRect();
-      if(rc.height>0&&rc.top<height)want=clamp((height-rc.top)*.5,0,height*.2);}
+      if(rc.height>0&&rc.top<height){dockTop=rc.top;want=clamp((height-rc.top)*.5,0,height*.2);}}
+    {const dh=Math.round(dockTop>0?height-dockTop:0);if(dh!==cam.dockH){cam.dockH=dh;document.documentElement.style.setProperty('--dock-space',dh+'px');}}
     viewShift=lerp(viewShift,want,1-Math.exp(-dt*6));
     // and sideways, to the middle of the free space between the panels down the sides
     let wantX=0;
@@ -3132,7 +3430,7 @@
         if(!(rc.width>0&&rc.height>height*.3))return 0;return left?Math.max(0,rc.right):Math.max(0,width-rc.left);};
       wantX=clamp((side(sidePanels[0],true)-side(sidePanels[1],false))*.5,-width*.16,width*.16);}
     viewShiftX=lerp(viewShiftX,wantX,1-Math.exp(-dt*4));
-    const s=Math.round(viewShift),sx=Math.round(viewShiftX),fov=2*Math.atan(Math.tan(cam.curFov*PI/360)*(height+2*s)/height)*180/PI;
+    const s=Math.round(viewShift),sx=Math.round(viewShiftX),fov=2*Math.atan(Math.tan(fovNow*PI/360)*(height+2*s)/height)*180/PI;
     if(Math.abs(camera.fov-fov)>.01||!camera.view||!camera.view.enabled||camera.view.offsetY!==2*s||camera.view.fullHeight!==height+2*s||camera.view.fullWidth!==width+2*Math.abs(sx)||camera.view.offsetX!==(sx<0?2*-sx:0)){
       const W=width+2*Math.abs(sx);camera.fov=fov;camera.aspect=W/(height+2*s);camera.setViewOffset(W,height+2*s,sx<0?-2*sx:0,2*s,width,height);
     }
@@ -3140,17 +3438,64 @@
     // above it would just be a dark slab over the table, so it is left out.
     canopy.visible=eye[1]<CANOPY_Y-.12;
   }
+  // ---- your hands on the camera ----
+  // A hand on the camera stops any move in progress where it is and, during a
+  // shot, takes over from the shot follow (it comes back to your view after).
+  function camHand(){
+    if(cam.blend)adoptCurrentPose();
+    if(cam.sf&&state.inShot)cam.sf.user=true;
+  }
+  const aimView=()=>cam.view==='aim'&&!cam.sf&&state.started&&!state.finished&&!state.inShot&&humanTurn()&&!state.ballInHand;
+  function camOrbit(dx,dy,fine){
+    const k=.0062*camSet.rot*(fine?.25:1),sy=camSet.invertY?-1:1;
+    if(aimView()){   // swing the aiming camera round the cue ball and raise or lower it; the aim itself never moves
+      const u=cam.user;u.side=clamp(u.side-dx*k,-.75,.75);u.el=clamp(u.el+dy*k*.8*sy,-.12,.95);return;}
+    camHand();if(cam.view!=='free')goView('free','keep');
+    cam.az-=dx*k;cam.el=clamp(cam.el+dy*k*.85*sy,camSet.elMin,camSet.elMax);
+    if(cam.focusName==='AUTO FOLLOW')cam.focusName='TABLE CENTRE';
+    labelView();
+  }
+  // Pan: the point the camera looks at moves with the pointer, in the plane of the picture (top view: of the table).
+  const _pr=new T.Vector3(),_pu=new T.Vector3();
+  function camPan(dx,dy,fine){
+    const k=camSet.pan*(fine?.3:1);
+    if(aimView()){camOrbit(dx*.35,dy,fine);return;}
+    camHand();
+    const r=distFor(cam.curRadius,cam.curFov)*cam.curZoom,m=2*Math.tan(cam.curFov*PI/360)*r/Math.max(1,height)*k;   // metres per pixel at the target
+    camera.updateMatrixWorld();_pr.setFromMatrixColumn(camera.matrixWorld,0);_pu.setFromMatrixColumn(camera.matrixWorld,1);
+    if(cam.view==='top'){const ul=Math.hypot(_pu.x,_pu.z)||1,rl=Math.hypot(_pr.x,_pr.z)||1;
+      cam.topPan[0]=clamp(cam.topPan[0]-dx*m*_pr.x/rl+dy*m*_pu.x/ul,-HX,HX);cam.topPan[1]=clamp(cam.topPan[1]-dx*m*_pr.z/rl+dy*m*_pu.z/ul,-HZ,HZ);return;}
+    if(cam.view!=='free')goView('free','keep');
+    const lim=[[-HX-4,HX+4],[FLOOR_Y,FLOOR_Y+4.5],[-HZ-4,HZ+4]],mv=[-dx*m*_pr.x+dy*m*_pu.x,-dx*m*_pr.y+dy*m*_pu.y,-dx*m*_pr.z+dy*m*_pu.z];
+    for(let j=0;j<3;j++){const v=clamp(cam.target[j]+mv[j],lim[j][0],lim[j][1]);cam.curTarget[j]+=v-cam.target[j];cam.target[j]=v;}
+    cam.focusName='CUSTOM POINT';labelView();
+  }
+  // Zoom: f > 1 goes closer. At a pointer, the top view keeps the spot under it where it is.
+  function camZoom(f,clientX,clientY){
+    const lo=camSet.zoomMin,hi=camSet.zoomMax;
+    if(cam.view==='top'&&!cam.sf){
+      const z0=cam.topZoom,z1=clamp(z0*f,1/hi,1/lo*1.6);if(z1===z0)return;
+      if(clientX!=null){const p=screenToTable(clientX,clientY);
+        if(p){const c=cam.topPan,q=z0/z1;cam.topPan=[clamp(p[0]-(p[0]-c[0])*q,-HX,HX),clamp(p[1]-(p[1]-c[1])*q,-HZ,HZ)];}}
+      cam.topZoom=z1;return;}
+    if(aimView()||(cam.view==='aim'&&!cam.sf&&state.ballInHand)){cam.user.zoom=clamp(cam.user.zoom/f,lo,hi);return;}
+    if(cam.view==='tv'&&!cam.sf){cam.tvZoom=clamp(cam.tvZoom/f,lo,hi);return;}
+    camHand();if(cam.view!=='free')goView('free','keep');
+    const d=distFor(cam.radius,cam.fov)*cam.zoom,d1=clamp(d/f,.4,12.5);cam.zoom*=d1/d;
+  }
+  // ---- see-through ----
   // Smart rail fade: only when the camera is low AND a ball sits close to the
   // cushion nearest the camera, that side's rail and cushion dissolve.
   function updateRailFade(dt){
     let want=0;const dir=fadeUniforms.uFadeDir.value;
     const lx=eye[0]-cam.curTarget[0],lz=eye[2]-cam.curTarget[2],ll=Math.hypot(lx,lz)||1;
-    if(railFadeEnabled&&cam.curEl<.62){
+    const elNow=Math.atan2(eye[1]-cam.curTarget[1],Math.hypot(lx,lz));
+    if(railFadeEnabled&&elNow<.62){
       const ux=lx/ll,uz=lz/ll;let sx=0,sz=0;
       if(Math.abs(ux)*HZ>Math.abs(uz)*HX)sx=Math.sign(ux);else sz=Math.sign(uz);
       dir.set(sx/(HX+.02)*(sx?1:0),sz/(HZ+.02)*(sz?1:0));
       const near=balls.some(b=>!b.pocketed&&(sx?sx*b.x>HX-.16:sz*b.z>HZ-.16));
-      if(near)want=clamp((.62-cam.curEl)*6,0,1);
+      if(near)want=clamp((.62-elNow)*6,0,1);
     }
     fadeUniforms.uFadeAmt.value=lerp(fadeUniforms.uFadeAmt.value,want,1-Math.exp(-dt*5));
     // while any of it is see-through, the rails and cushions draw with their depth laid first (see ghostOf)
@@ -3160,20 +3505,17 @@
         if(on||m.userData.ghost)ghostOf(m).visible=on;m.renderOrder=on?9:0;}}
   }
   let railGhosts=false,railMeshes=null;
-  // See-through: the referee fades when he stands between the camera and a
-  // ball; the score panels and controls fade while a ball sits behind them
-  // (hover a panel to bring it back).
-  const _seg=new T.Vector3(),_scr=new T.Vector3();
+  // See-through: the referee and the players fade when they stand between the
+  // camera and the play (or the camera is inside them); the score panels and
+  // controls fade while a ball sits behind them (hover a panel to bring it back).
+  const _seg=new T.Vector3(),_scr=new T.Vector3(),_occ=[null,null];
   let refFade=1,panelClock=0,viewShiftX=0;
-  // Everything drawn over the picture steps out of the way of the balls: it
-  // fades almost to nothing while any ball (its whole size on screen, with a
-  // margin) is behind it; hover it to bring it back.
   const PANELS=['.scoreboard','.match-panel','.scene-controls','.control-dock','.camera-switcher','.camera-tag','.focus-tag','.comm-caption','.comm-tag',
-    '.bot-skip','.control-hint','.toast','.arena-reaction','.top-bar'].map(q=>document.querySelector(q)).filter(Boolean);
+    '.bot-skip','.control-hint','.toast','.arena-reaction','.top-bar','.cam-panel','.touch-aim','.pull-power'].map(q=>document.querySelector(q)).filter(Boolean);
   const sidePanels=[document.querySelector('.scene-controls'),document.querySelector('.match-panel')];
-  function blocksView(x,z,radius,top){
-    for(const b of balls){
-      if(b.pocketed)continue;
+  function blocksView(x,z,radius,top,only){
+    for(const b of only||balls){
+      if(!b||b.pocketed)continue;
       const dx=b.x-eye[0],dy=BALL_Y-eye[1],dz=b.z-eye[2],L2=dx*dx+dz*dz;if(L2<1e-6)continue;
       const t=clamp(((x-eye[0])*dx+(z-eye[2])*dz)/L2,0,1);
       if(t>.97)continue;
@@ -3216,12 +3558,20 @@
   }
   function setPersonOpacity(p,o){fadePerson(p.obj,o);}
   function updateOcclusion(dt){
-    const p=ref.person;
+    const p=ref.person,cine0=cine.on;
     if(p){
-      const want=blocksView(p.obj.position.x,p.obj.position.z,.34,1.9)?.16:1;
+      const x=p.obj.position.x,z=p.obj.position.z,inside=Math.hypot(eye[0]-x,eye[2]-z)<.5&&eye[1]<FLOOR_Y+2.2;
+      const want=inside?0:blocksView(x,z,.34,1.9)?.16:1;
       const next=lerp(refFade,want,1-Math.exp(-dt*7));
-      if(Math.abs(next-refFade)>.002||(want===1&&refFade!==1&&next>.995)){refFade=next>.995?1:next;setPersonOpacity(p,refFade);}
+      if(Math.abs(next-refFade)>.002||(want===1&&refFade!==1&&next>.995)){refFade=next>.995?1:next<.005?0:next;setPersonOpacity(p,refFade);}
     }
+    // a player between the camera and the cue ball or the ball it is aimed at (not in the TV close-ups, where he is the picture)
+    {const cb=cueBall(),tgt=cb?aimTargets(state.inShot&&state.shot?state.shot.angle:ai.plan&&!humanTurn()?ai.plan.aim:state.aim):null;
+      const hitB=tgt&&tgt.length>2?balls.find(b=>!b.pocketed&&Math.abs(b.x-tgt[1][0])<1e-6&&Math.abs(b.z-tgt[1][1])<1e-6):null,only=_occ;_occ[0]=cb;_occ[1]=hitB;
+      const close=tv&&tv.active&&['face','chair'].includes(tv.shot);
+      for(const pl of PL){if(!pl||!pl.ok)continue;
+        const want=!cine0&&!close&&pl.act!=='sit'&&blocksView(pl.x,pl.z,.3,1.85,only)?.22:1;
+        pl.block=lerp(pl.block??1,want,1-Math.exp(-dt*7));if(Math.abs(pl.block-want)<.01)pl.block=want;}}
     panelClock-=dt;if(panelClock>0)return;panelClock=.15;
     const pts=[];
     if(state.started)for(const b of balls){if(b.pocketed)continue;_scr.set(b.x,BALL_Y,b.z).project(camera);if(_scr.z>=1)continue;
@@ -3243,16 +3593,29 @@
     if(!_ray.ray.intersectPlane(_tablePlane,_hitP))return null;
     return [_hitP.x,_hitP.z];
   }
+  // the ball under a point of the screen, if any
+  function ballAtScreen(clientX,clientY){
+    const p=screenToTable(clientX,clientY);if(!p)return null;
+    let best=null,bd=(R*2.4)**2;for(const b of balls){if(b.pocketed)continue;const d=(b.x-p[0])**2+(b.z-p[1])**2;if(d<bd){bd=d;best=b;}}
+    return best;
+  }
   let aimMoveX=null,focusTagText='';
-  function playerViewActive(){return (cam.follow||autoCamera)&&state.started&&!state.finished&&humanTurn()&&!state.ballInHand&&!state.inShot&&!isAnyOverlayOpen();}
+  function playerViewActive(){return cam.view==='aim'&&!cam.sf&&state.started&&!state.finished&&humanTurn()&&!state.ballInHand&&!state.inShot&&!isAnyOverlayOpen();}
   function paintFocusTag(){
-    const t=playerViewActive()?'MOVE THE MOUSE LEFT / RIGHT TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT':'AIM WITH YOUR MOUSE';
+    const touch=document.body.classList.contains('touch');
+    const t=playerViewActive()?(touch?'DRAG TO AIM · FINE AIM STRIP · PULL THE CUE TO SHOOT':'MOVE THE MOUSE LEFT / RIGHT TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT')
+      :cam.view==='free'?(touch?'DRAG TO TURN · PINCH TO ZOOM · TWO FINGERS TO MOVE':'DRAG TO TURN · RIGHT DRAG TO MOVE · WHEEL TO ZOOM'):touch?'TOUCH THE TABLE TO AIM':'AIM WITH YOUR MOUSE';
     if(t!==focusTagText&&$('focus-tag')){focusTagText=t;$('focus-tag').textContent=t;}
   }
   const _size=new T.Vector2();
   function resize(){
     width=canvas.clientWidth||window.innerWidth;height=canvas.clientHeight||window.innerHeight;
-    const ratio=Math.min(window.devicePixelRatio||1,QUALITY[quality].ratio);
+    // Sharpness: up to the screen's own pixel density, within a budget of
+    // pixels per quality level - the same work a laptop does at that level - so
+    // a phone (a small screen with three pixels to every point) is drawn at its
+    // full sharpness instead of being stretched up from a third of it.
+    const budget={high:3.4e6,medium:1.9e6,low:1.15e6}[quality]||1.9e6,css=Math.max(1,width*height);
+    const ratio=Math.min(window.devicePixelRatio||1,Math.max(QUALITY[quality].ratio,Math.sqrt(budget/css)));
     if(Math.abs(renderer.getPixelRatio()-ratio)>.01){renderer.setPixelRatio(ratio);if(composer)composer.setPixelRatio(ratio);}
     renderer.getSize(_size);
     if(_size.x!==width||_size.y!==height){renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();if(composer)composer.setSize(width,height);}
@@ -3315,6 +3678,7 @@
     $('power-slider').style.background=`linear-gradient(90deg,#d9bc83 0%,#d9bc83 ${p}%,rgba(199,222,200,.25) ${p}%,rgba(199,222,200,.25) 100%)`;
   }
   function paintSpin(x,y){
+    const risk=Math.hypot(x,y)>.86;$('spin-marker').classList.toggle('risk',risk);$('spin-pad').title=risk?'Miscue risk: struck this far off centre the tip can slip off the white':'';
     $('spin-marker').style.left=(50+x*39)+'%';
     $('spin-marker').style.top=(50-y*39)+'%';
     $('topspin-value').textContent=Math.round(y*100)+'%';
@@ -3721,6 +4085,10 @@
   // motion and the 2/5*m*r² moment of inertia; sidespin is angular velocity.
   const STEP=1/180, RESTITUTION=.947, CUSHION_RESTITUTION=.79, GRAVITY=9.81;
   const SLIDING_MU=.17, ROLLING_DECEL=.21, BALL_MASS=.142;
+  const NAP={velvet:1,theatre:1.25,palace:.9,arena:.8,dome:.75,stage:.7,'world-championship-arena':.65};
+  let napK=.011;   // m/s² (set per venue: an old club cloth carries a ball more than a championship one)
+  function setNap(id){napK=.011*(NAP[id]??1);}
+  setNap(venueId);
   function integrateRotation(b,dt){
     const wx=b.wx,wy=b.wy,wz=b.wz,mag=Math.hypot(wx,wy,wz);
     if(mag<1e-5)return;
@@ -3751,6 +4119,11 @@
       b.wx*=factor;b.wz*=factor;
     }
     b.wy*=Math.exp(-1.15*dt);
+    // The nap: the cloth's pile lies from the baulk end towards the black. A
+    // slow ball rolling across it is carried a little with it - a few
+    // centimetres over a slow roll across the table, more on some cloths.
+    if(napK>0){const sp=Math.hypot(b.vx,b.vz);
+      if(sp>.006&&sp<.62){const across=Math.abs(b.vz)/sp,f=napK*across*(sp<.26?1:(.62-sp)/.36);b.vx+=f*dt;b.wz-=f*dt/R;}}
     if(Math.hypot(b.vx,b.vz)<.004&&Math.hypot(b.wx,b.wz)*R<.006){
       b.vx=b.vz=b.wx=b.wz=0;
     }
@@ -3790,7 +4163,10 @@
     const tx=-nz,tz=nx;
     // Tangential contact velocity includes both ball spins.
     const surface=(rvx*tx+rvz*tz)+R*(a.wy+b.wy);
-    const jt=clamp(-surface/7,-impulse*.055,impulse*.055);
+    // throw: the balls grip each other through the contact; the friction is
+    // larger the slower they slide on each other (as measured on real balls)
+    const mu=.0095+.108*Math.exp(-1.088*Math.abs(surface));
+    const jt=clamp(-surface/7,-impulse*mu,impulse*mu);
     a.vx-=jt*tx;a.vz-=jt*tz;b.vx+=jt*tx;b.vz+=jt*tz;
     a.wy+=2.5*jt/R;b.wy+=2.5*jt/R;
     if(back){a.x+=a.vx*back;a.z+=a.vz*back;b.x+=b.vx*back;b.z+=b.vz*back;}
@@ -3980,7 +4356,18 @@
     // Forward roll, screw and english are encoded in angular momentum
     // (topspin -> more forward angular speed, backspin -> reverse screw).
     // cueStrikeState is shared with the aiming guide's path prediction.
-    const strike=cueStrikeState(cue,state.aim,cfg),velocity=strike.velocity;
+    const strike=cueStrikeState(cue,state.aim,cfg);let velocity=strike.velocity;
+    // A miscue: struck too near the edge of the white, the tip can slip off it -
+    // more likely the harder the hit. Not a foul by itself; the white just
+    // dribbles away off line with a click.
+    const off=Math.hypot(cfg.spinX||0,cfg.spinY||0),miscueRisk=Math.pow(clamp((off-.86)/.14,0,1),2)*(.08+.26*clamp(cfg.power/100,0,1))*(byBot?.55:1);
+    if(miscueRisk>0&&Math.random()<miscueRisk){
+      const side=Math.sign(cfg.spinX||((Math.random()<.5)?-1:1)),dev=side*(.08+Math.random()*.16),k=.12+Math.random()*.22,a=state.aim+dev;
+      velocity*=k;strike.vx=Math.cos(a)*velocity;strike.vz=Math.sin(a)*velocity;
+      strike.wx=Math.sin(a)*velocity/R;strike.wz=-Math.cos(a)*velocity/R;strike.wy*=.15;
+      setTimeout(()=>{sound('miscue',velocity,cue.x,cue.z);message('MISCUE','THE TIP SLIPPED OFF THE CUE BALL',1700);},30);
+      if(window.__miscues!=null)window.__miscues++;
+    }
     cue.vx=strike.vx;cue.vz=strike.vz;cue.wx=strike.wx;cue.wz=strike.wz;cue.wy=strike.wy;
     cue.spinX=cfg.spinX;cue.spinY=cfg.spinY;
     const lineInfo=shootLine();
@@ -4324,9 +4711,11 @@
     let bias=0;
     if(pick.kind==='pot'&&pick.target&&cb0){const toward=Math.sign(wrapA(Math.atan2(pick.target.z-cb0.z,pick.target.x-cb0.x)-pick.aim));
       bias=toward*Math.pow(1-clamp(pick.cut??1,0,1),2)*skill.aim*(Math.random()<.72?1.1:-.6)*stroke;}
-    return{...pick,aim:pick.aim+bias+aimSigma*normalRandom(),
-      power:Math.round(clamp(base.power+normalRandom()*skill.power*(.6+base.power/70)*(pick.kind==='pot'?1:.7),8,100)),
-      spinX:clamp(base.spinX+normalRandom()*skill.spin,-1,1),spinY:clamp(base.spinY+normalRandom()*skill.spin,-1,1)};
+    // (a player feels the side he actually puts on and aims for its squirt: an error in the side
+    //  changes where the white goes after the hit, not the line it leaves on)
+    const power=Math.round(clamp(base.power+normalRandom()*skill.power*(.6+base.power/70)*(pick.kind==='pot'?1:.7),8,100));
+    const spinX=clamp(base.spinX+normalRandom()*skill.spin,-1,1),feel=(spinX-(base.spinX||0))*SQUIRT*(.85+.3*clamp(power/100,0,1));
+    return{...pick,aim:pick.aim+bias+aimSigma*normalRandom()+feel,power,spinX,spinY:clamp(base.spinY+normalRandom()*skill.spin,-1,1)};
   }
   // Ball in hand: break off from beside the yellow; otherwise place the white
   // where the best pot is.
@@ -4897,8 +5286,46 @@
     p.face=f;faces.push(f);return f;
   }
   // Face shapes for the moves of the moment: blinks, and the lids that follow the eyes down to the table.
+  // ---- LIP-SYNC ----
+  // The referee's mouth takes the shapes of what he says, read from his voice
+  // as it plays: an open AA from strong low formants, E and I when the high
+  // ones ring, O and U when only the middle sounds, S and SH from the hiss,
+  // F from a soft hiss, and the lips close (P, B, M) as a word starts after a
+  // pause. The players mouth their reactions (YES!, NO..., COME ON) the same way.
+  const VISEMES=['aa','E','I','O','U','SS','CH','PP','FF','nn','DD','RR','KK','TH'];
+  let visFreq=null,visLevel=0,visQuiet=1;
+  const visRaw={};for(const k of VISEMES)visRaw[k]=0;
+  function voiceVisemes(dt){
+    for(const k of VISEMES)visRaw[k]=0;
+    const lvl=typeof refVoiceLevel==='function'?refVoiceLevel():0;
+    if(!voiceAn||!voicePlaying||lvl<.006){visQuiet+=dt;visLevel=lvl;return visRaw;}
+    if(!visFreq||visFreq.length!==voiceAn.frequencyBinCount)visFreq=new Float32Array(voiceAn.frequencyBinCount);
+    voiceAn.getFloatFrequencyData(visFreq);
+    const hz=(audioContext?audioContext.sampleRate:48000)/(2*visFreq.length),band=(a,b)=>{let e=0;for(let i=Math.floor(a/hz);i<=Math.min(visFreq.length-1,Math.ceil(b/hz));i++)e+=Math.pow(10,visFreq[i]/10);return e;};
+    const lo=band(200,700),mid=band(700,1500),hi=band(1500,3400),sib=band(4200,9000),tot=lo+mid+hi+sib+1e-12,loud=clamp(lvl*5.2,0,1);
+    if(visQuiet>.12&&lvl>visLevel*1.6)visRaw.PP=.9;                          // a word starting after a pause: the lips part from closed
+    visQuiet=0;visLevel=lvl;
+    const fs=sib/tot,fl=lo/tot,fh=hi/tot,fm=mid/tot;
+    if(fs>.4){visRaw[fm>.25?'CH':'SS']=loud*clamp((fs-.3)*2.2,0,1);visRaw.FF=loud*.25;}
+    else{   // vowels from the balance of the bands: a strong second formant is a front vowel (E, I), a high first one an open AA, neither a rounded O or U
+      const front=clamp((hi/(lo+mid+1e-12)-.08)*3.6,0,1),open=clamp((mid/(lo+1e-12)-.18)*1.7,0,1);
+      visRaw.E=loud*front*.75;visRaw.I=loud*clamp(front*2-1,0,1)*.8;visRaw.aa=loud*open*(1-front*.7);
+      visRaw.O=loud*(1-open)*(1-front)*.85;visRaw.U=visRaw.O*.45;visRaw.nn=loud*.15;}
+    return visRaw;
+  }
+  // a reaction mouthed by a player: a short word as a list of [viseme, seconds]
+  const SAY_WORDS={yes:[['I',.07],['E',.1],['SS',.2]],no:[['nn',.08],['O',.26]],comeon:[['KK',.06],['aa',.09],['PP',.05],['O',.08],['nn',.14]],ohno:[['O',.18],['nn',.06],['O',.22]],ugh:[['aa',.12],['KK',.1]]};
+  const SAY_FOR={fistpump:'comeon',win:'yes',acknowledge:'yes',anger:'ugh',regret:'no',facepalm:'ohno',disbelief:'ohno',lose:'no'};
+  function sayWord(f,word,delay=0){const seq=SAY_WORDS[word];if(f&&seq)f.say={seq,at:time+delay};}
+  function wordVisemes(f){
+    const out=f.visW||(f.visW={});for(const k of VISEMES)out[k]=0;
+    const s=f.say;if(!s)return out;let t=time-s.at;if(t<0)return out;
+    for(const [v,d] of s.seq){if(t<d){out[v]=Math.sin(Math.min(1,t/d)*PI)*.85+.15;return out;}t-=d;}
+    f.say=null;return out;
+  }
   function arkitPose(f,b){
     const sh=f.shape,w=f.w;for(const n in sh)sh[n]=0;
+    if(f.vis)for(const k of VISEMES){const v=f.vis[k];if(v>.01)sh['VI_'+k]=v;}
     for(const k of FACE_KEYS){if(k==='blink')continue;const v=w[k];if(!(v>.001))continue;const e=FACE_ARKIT[k];for(const n in e)sh[n]=(sh[n]||0)+e[n]*v;}
     const g=f.pitch||0,lid=Math.min(1,Math.max(b,w.blink)+(g>0?Math.min(.3,g*.6):0));
     sh.EyeBlinkLeft=Math.max(sh.EyeBlinkLeft||0,lid);sh.EyeBlinkRight=Math.max(sh.EyeBlinkRight||0,lid);
@@ -4909,6 +5336,7 @@
   function faceExpr(p,kind,dur=2.5,delay=0){
     const f=faceOf(p),look=FACE_LOOKS[kind];if(!f||!look)return;
     f.next={look,at:time+delay,until:time+delay+Math.max(.8,dur)};
+    if(SAY_FOR[kind]&&f.arkit&&!f.talks&&Math.random()<.75)sayWord(f,SAY_FOR[kind],delay+.15+Math.random()*.25);
   }
   function lookEyes(f,dt){
     if(time>f.saccAt){f.saccAt=time+.35+Math.random()*1.8;f.sacc.set((Math.random()-.5)*.08,(Math.random()-.5)*.04,(Math.random()-.5)*.08);}
@@ -4935,7 +5363,7 @@
       if(down&&cb)f.target.set(cb.x,by,cb.z);else f.target.set(fp[0],by,fp[1]);}
     if(ref.person){const f=faceOf(ref.person);if(f){f.talks=true;
       if(ref.task)f.target.set(ref.task.x,by,ref.task.z);else f.target.set(fp[0],by,fp[1]);}}
-    const voice=typeof refVoiceLevel==='function'?refVoiceLevel():0;
+    const voice=typeof refVoiceLevel==='function'?refVoiceLevel():0,vRaw=voiceVisemes(dt);
     for(let n=faces.length-1;n>=0;n--){
       const f=faces[n],p=f.p;
       if(!p.obj.parent){faces.splice(n,1);continue;}       // gone: a new venue, a new match
@@ -4943,8 +5371,13 @@
       if(f.next&&time>=f.next.at){f.cur=f.next;f.next=null;}
       if(f.cur&&time>f.cur.until)f.cur=null;
       for(const k of FACE_KEYS){let v=f.cur&&f.cur.look[k]||0;if(f.focus&&FACE_FOCUS[k])v=Math.max(v,FACE_FOCUS[k]);f.want[k]=v;}
-      if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));
+      // the mouth: speech shapes where the head has them (from his voice, or a mouthed word), else the jaw with the loudness
+      const src=f.talks?vRaw:f.say?wordVisemes(f):null,kv=1-Math.exp(-dt*24);
+      if(f.arkit&&src){f.vis=f.vis||{};let any=0;for(const k of VISEMES){f.vis[k]=(f.vis[k]||0)+((src[k]||0)-(f.vis[k]||0))*kv;any+=f.vis[k];}
+        if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));f.want.open=Math.max(f.want.open,clamp(f.talk*1.2,0,.12));}}
+      else if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));
         f.want.open=Math.max(f.want.open,clamp(f.talk*3.4,0,.42));f.want.pucker=Math.max(f.want.pucker,clamp(f.talk*1.4,0,.16));}
+      else if(f.vis){let any=0;for(const k of VISEMES){f.vis[k]*=1-kv;any+=f.vis[k];}if(any<.01)f.vis=null;}
       const r=1-Math.exp(-dt*6),rt=1-Math.exp(-dt*22);
       for(const k of FACE_KEYS)f.w[k]+=(f.want[k]-f.w[k])*(f.talks&&(k==='open'||k==='pucker')?rt:r);
       if(f.blinkT<0&&time>=f.blinkAt){f.blinkT=0;f.blinkAt=time+(Math.random()<.14?.34:2+Math.random()*4.5);}
@@ -5013,6 +5446,12 @@
     const ctx=ensureAudio();if(!ctx||sfxState!=='ready')return;
     if(type==='score'||type==='foul')return;
     if(type==='cheer'||type==='applause'||type==='gasp'||type==='frame'){crowdSound(ctx,type);return;}
+    if(type==='miscue'){const now=ctx.currentTime,[pan,near]=soundPlace(x,z),out=ctx.createGain();out.gain.value=.55*near;
+      let o=out;if(ctx.createStereoPanner){const pn=ctx.createStereoPanner();pn.pan.value=pan;out.connect(pn);o=pn;}o.connect(tableIn);
+      const tk=ownSfx('cue')||sfxBuf.cue_0_0;if(tk){const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=tk;s.playbackRate.value=1.75;g.gain.value=.45;s.connect(g);g.connect(out);s.start(now+.003);}
+      const n=Math.floor(ctx.sampleRate*.09),nb=ctx.createBuffer(1,n,ctx.sampleRate),d=nb.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2);
+      const ns=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),ng=ctx.createGain();ns.buffer=nb;bp.type='bandpass';bp.frequency.value=2600;bp.Q.value=1.4;ng.gain.value=.5;
+      ns.connect(bp);bp.connect(ng);ng.connect(out);ns.start(now+.012);return;}
     const fam={click:'click',shot:'cue',cushion:'cushion',pocket:'pocket'}[type];if(!fam)return;
     const v=Math.max(.02,Math.abs(velocity)),now=ctx.currentTime,L=SFX.layers[fam]||[1];
     if(now-(sfxLastAt[fam]||0)<.007||voicesActive>16)return;
@@ -5087,10 +5526,15 @@
   // ball held still, until it touches a ball, drops into a pocket, stops, or
   // has used its cushions. Before the first contact only the cue ball moves,
   // so this is exactly the path the real shot will take - cushions included.
+  // Squirt: a cue ball struck off centre is pushed a little off the line, away
+  // from the side struck (about 1.6° with full side, more for a harder hit).
+  // The aiming guide and the bot's planning use this same strike.
+  const SQUIRT=1.6*PI/180;
   function cueStrikeState(cue,aim,cfg){
     const p=cfg.power/100,velocity=.20+4.7*Math.pow(p,1.23),forwardSpin=velocity/R*(1+cfg.spinY*2.4);
-    return{x:cue.x,z:cue.z,vx:Math.cos(aim)*velocity,vz:Math.sin(aim)*velocity,
-      wx:Math.sin(aim)*forwardSpin,wz:-Math.cos(aim)*forwardSpin,wy:cfg.spinX*52,q:[0,0,0,1],velocity};
+    const a=aim-(cfg.spinX||0)*SQUIRT*(.85+.3*p);
+    return{x:cue.x,z:cue.z,vx:Math.cos(a)*velocity,vz:Math.sin(a)*velocity,
+      wx:Math.sin(a)*forwardSpin,wz:-Math.cos(a)*forwardSpin,wy:cfg.spinX*52,q:[0,0,0,1],velocity};
   }
   function contactT(ax,az,bx,bz,ox,oz){
     const dx=bx-ax,dz=bz-az,fx=ax-ox,fz=az-oz,a=dx*dx+dz*dz,b=2*(fx*dx+fz*dz),c=fx*fx+fz*fz-4*R*R;
@@ -5300,18 +5744,7 @@
   }
 
   // ---- INPUT, MENUS AND ACCESSIBILITY --------------------------------------
-  let draggingOrbit=false,dragPointer=null,lastDragX=0,lastDragY=0,cueDragPointer=null,panDrag=null;
-  // The free camera: no automatic direction, the view stays where you leave it.
-  function freeCam(){setAutoCamera(false);cam.follow=false;cam.mode=-1;cameraLabel('FREE CAMERA','◎');}
-  // Pan: the point the camera looks at moves with the mouse, in the plane of the picture (sideways, up and down).
-  const _pr=new T.Vector3(),_pu=new T.Vector3();
-  function panCamera(dx,dy){
-    freeCam();
-    const r=distFor(cam.curRadius,cam.curFov)*cam.curZoom,k=2*Math.tan(cam.curFov*PI/360)*r/Math.max(1,height);   // metres per pixel at the target
-    camera.updateMatrixWorld();_pr.setFromMatrixColumn(camera.matrixWorld,0);_pu.setFromMatrixColumn(camera.matrixWorld,1);
-    const lim=[[-HX-4,HX+4],[FLOOR_Y,FLOOR_Y+4.5],[-HZ-4,HZ+4]],m=[-dx*k*_pr.x+dy*k*_pu.x,-dx*k*_pr.y+dy*k*_pu.y,-dx*k*_pr.z+dy*k*_pu.z];
-    for(let j=0;j<3;j++){const v=clamp(cam.target[j]+m[j],lim[j][0],lim[j][1]);cam.curTarget[j]+=v-cam.target[j];cam.target[j]=v;}
-  }
+  let cueDragPointer=null;
   function activeOverlay(id,active){$(id).classList.toggle('active',active);}
   function isAnyOverlayOpen(){return ['welcome-screen','help-screen','menu-screen','end-screen','decision-screen','tournament-screen','sounds-screen'].some(id=>$(id).classList.contains('active'));}
   const spinPad=$('spin-pad');
@@ -5326,11 +5759,22 @@
   $('reset-spin').addEventListener('click',()=>setSpin(0,0));
   $('power-slider').addEventListener('input',syncPower);
   $('shoot-button').addEventListener('click',()=>playShot(false));
-  $('camera-button').addEventListener('click',()=>setCamera(cam.mode+1));
-  $('auto-camera-button').addEventListener('click',()=>setAutoCamera(!autoCamera));
-  $('angle-back').addEventListener('click',()=>setCamera(cam.mode-1));
-  $('angle-next').addEventListener('click',()=>setCamera(cam.mode+1));
-  $('angle-top').addEventListener('click',()=>setCamera(OVERHEAD_PRESET));
+  $('camera-button').addEventListener('click',()=>cycleView(1));
+  $('auto-camera-button').addEventListener('click',toggleAutoTv);
+  $('angle-back').addEventListener('click',()=>tvAngle(-1));
+  $('angle-next').addEventListener('click',()=>tvAngle(1));
+  document.querySelectorAll('[data-camview]').forEach(b=>b.addEventListener('click',()=>goView(b.dataset.camview)));
+  document.querySelector('.scene-title')?.addEventListener('click',()=>document.querySelector('.scene-controls')?.classList.toggle('open'));   // (folds away on small screens)
+  // the camera settings: sensitivities, smoothing, the length of a change of view, the shot follow, inverted vertical
+  {const panel=$('cam-panel'),gear=$('cam-settings');
+    const show=on=>{if(!panel)return;panel.hidden=!on;if(gear){gear.classList.toggle('active',on);gear.setAttribute('aria-expanded',String(on));}if(on)paintCamUI();};
+    gear?.addEventListener('click',()=>show(panel.hidden));$('cam-close')?.addEventListener('click',()=>show(false));
+    for(const k of ['rot','zoom','pan','smooth','trans'])$('cam-'+k)?.addEventListener('input',ev=>{camSet[k]=clamp(+ev.target.value,k==='smooth'?0:.2,k==='trans'?1.6:2.5);saveCamSet();paintCamUI();});
+    $('cam-autotv')?.addEventListener('click',toggleAutoTv);
+    $('cam-invert')?.addEventListener('click',()=>{camSet.invertY=!camSet.invertY;saveCamSet();paintCamUI();});
+    $('cam-reset-view')?.addEventListener('click',resetCamera);
+    $('cam-reset')?.addEventListener('click',()=>{Object.assign(camSet,CAM_DEFAULTS);saveCamSet();paintCamUI();message('CAMERA','DEFAULT SETTINGS RESTORED',1300);});
+    labelView();}
   $('focus-pick').addEventListener('click',()=>{
     focusPicking=!focusPicking;$('focus-pick').classList.toggle('active',focusPicking);
     if(focusPicking){setAutoCamera(false);message('PICK FOCUS','CLICK ANY POSITION ON THE TABLE');}
@@ -5628,92 +6072,154 @@
   ['menu-screen','help-screen'].forEach(id=>$(id).querySelector('.overlay-backdrop').addEventListener('click',()=>activeOverlay(id,false)));
   canvas.addEventListener('contextmenu',ev=>ev.preventDefault());
   canvas.addEventListener('mousedown',ev=>{if(ev.button===1)ev.preventDefault();});   // (no auto-scroll on a middle drag)
-  canvas.addEventListener('pointerdown',ev=>{
-    if(isAnyOverlayOpen()||!state.started)return;
-    // Shift + middle or left drag moves the camera sideways and up and down, Ctrl + middle drag zooms, as in
-    // Blender; a Shift + click that does not move still picks a focus point on the table.
-    if((ev.shiftKey&&(ev.button===1||ev.button===0))||(ev.ctrlKey&&ev.button===1)){
-      panDrag={id:ev.pointerId,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,moved:false,b:ev.button,zoom:!ev.shiftKey};
-      canvas.setPointerCapture(ev.pointerId);ev.preventDefault();return;
-    }
-    if(ev.button===0&&focusPicking){
-      const point=screenToTable(ev.clientX,ev.clientY);
-      if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + CLICK ANOTHER LOCATION TO REFOCUS',1550);}
-      return;
-    }
-    // Orbiting the camera is always allowed, including while the opponent plays.
-    if(ev.button===2||ev.button===1||ev.altKey){
-      draggingOrbit=true;dragPointer=ev.pointerId;lastDragX=ev.clientX;lastDragY=ev.clientY;
-      canvas.setPointerCapture(ev.pointerId);setAutoCamera(false);return;
-    }
-    if(!humanTurn())return;
-    if(ev.button!==0||state.inShot)return;
+  // Pointers on the picture.
+  //   Mouse: the left button aims - or, with the FREE camera, turns it; the
+  //   right button moves the camera (in the aiming view it raises it or swings
+  //   it round the cue ball, never touching the aim); the middle button or
+  //   Alt + drag turns it; Ctrl / Cmd + drag moves it; Ctrl + middle drag and
+  //   the wheel zoom; Shift makes any of it fine. Shift + click picks a focus
+  //   point; double-click a ball to focus on it.
+  //   Touch: one finger aims (a tap on a ball aims at it) - or turns the FREE
+  //   camera; two fingers pinch to zoom and slide to move the camera.
+  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null;
+  function aimAtPoint(px,pz){const cb=cueBall();if(!cb)return;state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();}
+  // a click or a tap on the table: a colour to nominate, or where to aim
+  function tableClick(ev){
+    if(!humanTurn()||state.inShot||isAnyOverlayOpen())return false;
     const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
-    if(!point||!cb)return;
+    if(!point||!cb)return false;
     const [px,pz]=point;
-    // Interact with white in the D. Clicking in an empty part of the D also repositions it.
-    if(state.ballInHand&&(len2(px-cb.x,pz-cb.z)<R*3.3||cueInD(px,pz))){
-      if(cueInD(px,pz))moveCueInD(px,pz);
-      cueDragPointer=ev.pointerId;canvas.setPointerCapture(ev.pointerId);
-      message('CUE BALL IN HAND','DRAG INSIDE THE D · RELEASE TO SET POSITION',1700);return;
-    }
-    // Nomination is performed by selecting the coloured ball on the felt.
     if(state.phase==='color'){
       const nearest=balls.filter(b=>!b.pocketed&&b.type!=='cue').map(b=>({b,d:len2(px-b.x,pz-b.z)})).sort((a,b)=>a.d-b.d)[0];
       if(nearest&&nearest.d<R*2.55){
         if(nearest.b.type==='red')message('RED IS NOT SELECTABLE','CLICK A COLOURED BALL ON THE TABLE',1400);
         else selectColour(nearest.b.type);
-        return;
-      }
+        return true;}
     }
-    state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();
+    if(len2(px-cb.x,pz-cb.z)>.035)aimAtPoint(px,pz);return true;
+  }
+  const pickFocusAt=ev=>{const point=screenToTable(ev.clientX,ev.clientY);
+    if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + CLICK ANOTHER LOCATION TO REFOCUS',1600);}};
+  canvas.addEventListener('pointerdown',ev=>{
+    if(ev.pointerType==='touch')document.body.classList.add('touch');
+    if(isAnyOverlayOpen()||!state.started)return;
+    if(ev.pointerType==='touch'){
+      touches.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+      if(touches.size>=2){   // two fingers: the camera - whatever the first finger began is undone
+        if(oneFinger&&oneFinger.moved&&!cam.sf){state.aim=oneFinger.aim0;autoNominate();}
+        oneFinger=null;camDrag=null;aimMoveX=null;if(cueDragPointer!=null){cueDragPointer=null;refreshUI();}
+        const [a,b]=[...touches.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,mx:(a.x+b.x)/2,my:(a.y+b.y)/2};
+        try{canvas.setPointerCapture(ev.pointerId);}catch(e){}return;}
+    }
+    if(ev.button===0&&focusPicking){pickFocusAt(ev);return;}
+    const cb=cueBall(),point=screenToTable(ev.clientX,ev.clientY),mod=ev.altKey||ev.ctrlKey||ev.metaKey;
+    // the white in hand: drag it inside the D (clicking an empty part of the D moves it there)
+    if(ev.button===0&&!mod&&!ev.shiftKey&&humanTurn()&&!state.inShot&&state.ballInHand&&point&&cb&&(len2(point[0]-cb.x,point[1]-cb.z)<R*3.3||cueInD(point[0],point[1]))){
+      if(cueInD(point[0],point[1]))moveCueInD(point[0],point[1]);
+      cueDragPointer=ev.pointerId;canvas.setPointerCapture(ev.pointerId);
+      message('CUE BALL IN HAND','DRAG INSIDE THE D · RELEASE TO SET POSITION',1700);return;
+    }
+    // a hand on the camera (allowed at any time, also while the opponent plays or the balls run)
+    let kind=null;
+    if(ev.button===2)kind='pan';
+    else if(ev.button===1)kind=ev.ctrlKey?'zoom':'orbit';
+    else if(ev.button===0&&ev.altKey)kind='orbit';
+    else if(ev.button===0&&(ev.ctrlKey||ev.metaKey))kind='pan';
+    else if(ev.button===0&&cam.view==='free')kind='orbit';
+    if(kind){camDrag={id:ev.pointerId,kind,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,moved:false,shiftClick:ev.shiftKey&&ev.button===0,click:ev.button===0};
+      try{canvas.setPointerCapture(ev.pointerId);}catch(e){}ev.preventDefault();return;}
+    if(ev.button!==0)return;
+    if(ev.shiftKey){shiftPress={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,moved:false};return;}   // a focus point, unless it moves (then: fine aiming)
+    if(ev.pointerType==='touch'){oneFinger={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,lx:ev.clientX,t0:performance.now(),aim0:state.aim,moved:false};return;}
+    tableClick(ev);
   });
-  canvas.addEventListener('pointerleave',()=>{aimMoveX=null;});
+  canvas.addEventListener('pointerleave',ev=>{if(ev.pointerType!=='touch')aimMoveX=null;});
   canvas.addEventListener('pointermove',ev=>{
-    if(panDrag&&panDrag.id===ev.pointerId){
-      const dx=ev.clientX-panDrag.x,dy=ev.clientY-panDrag.y;panDrag.x=ev.clientX;panDrag.y=ev.clientY;
-      if(!panDrag.moved&&Math.hypot(ev.clientX-panDrag.x0,ev.clientY-panDrag.y0)>4)panDrag.moved=true;
-      if(panDrag.moved){if(panDrag.zoom){cam.zoom=clamp(cam.zoom*Math.exp(dy*.006),.25,2.4);cam.curZoom=cam.zoom;freeCam();}else panCamera(dx,dy);}
+    if(ev.pointerType==='touch'&&touches.has(ev.pointerId)){
+      touches.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+      if(pinch&&touches.size>=2){const [a,b]=[...touches.values()],d=Math.hypot(a.x-b.x,a.y-b.y)||1,mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+        camZoom(Math.pow(d/pinch.d,camSet.zoom),mx,my);camPan(mx-pinch.mx,my-pinch.my,false);
+        pinch.d=d;pinch.mx=mx;pinch.my=my;return;}
+    }
+    if(camDrag&&camDrag.id===ev.pointerId){
+      const dx=ev.clientX-camDrag.x,dy=ev.clientY-camDrag.y;camDrag.x=ev.clientX;camDrag.y=ev.clientY;
+      if(!camDrag.moved&&Math.hypot(ev.clientX-camDrag.x0,ev.clientY-camDrag.y0)>4)camDrag.moved=true;
+      if(camDrag.moved){const fine=ev.shiftKey;
+        if(camDrag.kind==='pan')camPan(dx,dy,fine);
+        else if(camDrag.kind==='zoom')camZoom(Math.exp(-dy*.006*camSet.zoom*(fine?.3:1)));
+        else camOrbit(dx,dy,fine);}
       return;
     }
-    if(draggingOrbit&&dragPointer===ev.pointerId){
-      const dx=ev.clientX-lastDragX,dy=ev.clientY-lastDragY;lastDragX=ev.clientX;lastDragY=ev.clientY;
-      cam.az-=dx*.007;cam.el=clamp(cam.el+dy*.006,.24,1.558);cam.mode=-1;cam.follow=false;
-      cameraLabel('FREE CAMERA','◎');return;
-    }
+    if(shiftPress&&shiftPress.id===ev.pointerId&&Math.hypot(ev.clientX-shiftPress.x0,ev.clientY-shiftPress.y0)>4)shiftPress.moved=true;
     if(isAnyOverlayOpen()||state.inShot||!humanTurn())return;
     if(cueDragPointer===ev.pointerId){
       const point=screenToTable(ev.clientX,ev.clientY);
       if(point&&moveCueInD(point[0],point[1]))refreshUI();
       return;
     }
-    if(ev.pointerType==='touch'&&ev.buttons!==1)return;
+    if(ev.pointerType==='touch'){   // one finger: in the aiming view sideways turns the aim; in the others it points the aim
+      const f=oneFinger;if(!f||f.id!==ev.pointerId)return;
+      if(!f.moved&&Math.hypot(ev.clientX-f.x0,ev.clientY-f.y0)>7){f.moved=true;f.lx=ev.clientX;}
+      if(!f.moved)return;
+      if(playerViewActive()){state.aim+=(ev.clientX-f.lx)*.0019;f.lx=ev.clientX;state.aimKnown=true;autoNominate();return;}
+      const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
+      if(point&&cb&&len2(point[0]-cb.x,point[1]-cb.z)>.035)aimAtPoint(point[0],point[1]);
+      return;
+    }
     if(playerViewActive()){
       // Player view: sideways mouse movement turns the aim (hold Shift for fine).
       if(aimMoveX!==null){state.aim+=(ev.clientX-aimMoveX)*(ev.shiftKey?.00045:.0022);state.aimKnown=true;autoNominate();}
       aimMoveX=ev.clientX;return;
     }
     aimMoveX=null;
+    if(cam.view==='free')return;      // the free camera is for looking round: there the aim moves only with a click
     const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
     if(point&&cb&&len2(point[0]-cb.x,point[1]-cb.z)>.035){
       state.aim=Math.atan2(point[1]-cb.z,point[0]-cb.x);state.aimKnown=true;autoNominate();
     }
   });
   const releaseDrag=ev=>{
-    if(panDrag&&panDrag.id===ev.pointerId){const d=panDrag;panDrag=null;
-      if(!d.moved&&d.b===0){const point=screenToTable(ev.clientX,ev.clientY);
-        if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + DRAG TO MOVE THE CAMERA · SHIFT + CLICK TO REFOCUS',1800);}}
+    if(ev.pointerType==='touch'){touches.delete(ev.pointerId);if(touches.size<2)pinch=null;}
+    if(camDrag&&camDrag.id===ev.pointerId){const d=camDrag;camDrag=null;
+      if(!d.moved&&ev.type==='pointerup'&&d.click){if(d.shiftClick)pickFocusAt(ev);else tableClick(ev);}
       return;}
-    if(dragPointer===ev.pointerId){draggingOrbit=false;dragPointer=null;}
+    if(shiftPress&&shiftPress.id===ev.pointerId){const sp=shiftPress;shiftPress=null;if(!sp.moved&&ev.type==='pointerup')pickFocusAt(ev);}
+    if(oneFinger&&oneFinger.id===ev.pointerId){const f=oneFinger;oneFinger=null;
+      if(!f.moved&&ev.type==='pointerup'&&performance.now()-f.t0<500)tableClick(ev);}
     if(cueDragPointer===ev.pointerId){cueDragPointer=null;refreshUI();message('CUE BALL PLACED','AIM AT THE BALL ON',1300);}
   };
   canvas.addEventListener('pointerup',releaseDrag);canvas.addEventListener('pointercancel',releaseDrag);
+  canvas.addEventListener('dblclick',ev=>{
+    if(isAnyOverlayOpen()||!state.started||playerViewActive())return;
+    const b=ballAtScreen(ev.clientX,ev.clientY);
+    if(b)focusOn(b.x,b.z,b.type==='cue'?'CUE BALL':b.type.toUpperCase()+' BALL',BALL_Y);
+  });
   canvas.addEventListener('wheel',ev=>{
     if(isAnyOverlayOpen())return;
     ev.preventDefault();
-    if(ev.ctrlKey||ev.metaKey){cam.zoom=clamp(cam.zoom*(1+ev.deltaY*.0011),.55,1.8);}else{
-      adjustPower(ev.deltaY>0?-3:3);}
+    const dy=ev.deltaMode===1?ev.deltaY*33:ev.deltaMode===2?ev.deltaY*400:ev.deltaY;
+    camZoom(Math.exp(-clamp(dy,-240,240)*.0011*camSet.zoom*(ev.shiftKey?.3:1)*(ev.ctrlKey?2.2:1)),ev.clientX,ev.clientY);
   },{passive:false});
+  // the wheel over the shot power still sets the power
+  document.querySelector('.power-section')?.addEventListener('wheel',ev=>{ev.preventDefault();adjustPower(ev.deltaY>0?-3:3);},{passive:false});
+  // Touch controls (shown once a finger is used): a strip for fine aiming and a
+  // cue to pull down for the power - let go to strike, slide it home to cancel.
+  {const strip=$('fine-aim'),pull=$('pull-power');let fa=null,pp=null;
+    const canAim=()=>state.started&&!state.inShot&&humanTurn()&&!isAnyOverlayOpen()&&!state.ballInHand&&!state.decision;
+    strip?.addEventListener('pointerdown',ev=>{if(!canAim())return;fa={id:ev.pointerId,x:ev.clientX};strip.setPointerCapture(ev.pointerId);strip.classList.add('active');ev.preventDefault();});
+    strip?.addEventListener('pointermove',ev=>{if(!fa||fa.id!==ev.pointerId||!canAim())return;state.aim+=(ev.clientX-fa.x)*.00032;fa.x=ev.clientX;state.aimKnown=true;autoNominate();});
+    const faEnd=ev=>{if(fa&&fa.id===ev.pointerId){fa=null;strip.classList.remove('active');}};
+    strip?.addEventListener('pointerup',faEnd);strip?.addEventListener('pointercancel',faEnd);
+    const paint=d=>{if(!pull)return;pull.style.setProperty('--pull',d.toFixed(3));pull.dataset.p=d>.06?Math.round(5+95*d)+'%':'PULL';};
+    pull?.addEventListener('pointerdown',ev=>{if(!canAim()||stroke.on)return;if(controlsLocked()){lockedNotice();return;}
+      pp={id:ev.pointerId,y0:ev.clientY,d:0};pull.setPointerCapture(ev.pointerId);pull.classList.add('pulling');ev.preventDefault();});
+    pull?.addEventListener('pointermove',ev=>{if(!pp||pp.id!==ev.pointerId)return;
+      const h=pull.getBoundingClientRect().height||200,d=clamp((ev.clientY-pp.y0)/(h*.8),0,1);pp.d=d;paint(d);
+      if(d>.06){$('power-slider').value=String(Math.round(5+95*d));syncPower();}});
+    const ppEnd=ev=>{if(!pp||pp.id!==ev.pointerId)return;const d=pp.d;pp=null;pull.classList.remove('pulling');paint(0);
+      if(ev.type==='pointerup'&&d>.06&&canAim())playShot(false);};
+    pull?.addEventListener('pointerup',ppEnd);pull?.addEventListener('pointercancel',ppEnd);
+    window.addEventListener('pointerdown',ev=>{if(ev.pointerType==='touch')document.body.classList.add('touch');},{capture:true,passive:true});}
   window.addEventListener('keydown',ev=>{
     const tag=document.activeElement?.tagName;if(tag==='INPUT'&&ev.key!=='Escape')return;
     if(ev.key==='Escape'){
@@ -5724,13 +6230,14 @@
     }
     if(isAnyOverlayOpen()||!state.started)return;
     if(ev.code==='Space'){ev.preventDefault();playShot();}
-    if(ev.key==='c'||ev.key==='C')setCamera(cam.mode+1);
-    if(ev.key==='p'||ev.key==='P')setCamera(PLAYER_PRESET);
+    if(ev.key==='c'||ev.key==='C')cycleView(ev.shiftKey?-1:1);
+    if(ev.key==='p'||ev.key==='P')goView('aim');
+    if(ev.key==='Home'){ev.preventDefault();resetCamera();}
     if(ev.key==='s'||ev.key==='S')skipBotTurn();
     if(ev.key==='t'||ev.key==='T')toggleTv();
     if(ev.key==='e'||ev.key==='E')useEscapeHint();
     if(ev.key==='y'||ev.key==='Y')replayBest();
-    if(ev.key==='a'||ev.key==='A')setAutoCamera(!autoCamera);
+    if(ev.key==='a'||ev.key==='A')toggleAutoTv();
     if(ev.key==='h'||ev.key==='H'){$('hud-button').click();}
     if(ev.key==='f'||ev.key==='F')$('focus-pick').click();
     if(ev.key==='v'||ev.key==='V')$('rail-fade-toggle').click();

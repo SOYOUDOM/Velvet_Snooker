@@ -74,7 +74,7 @@
     tex.flipY = false;                                   // glTF texture convention
     tex.wrapS = tex.wrapT = T.RepeatWrapping;
     tex.colorSpace = color ? T.SRGBColorSpace : T.NoColorSpace;
-    tex.anisotropy = 4;
+    tex.anisotropy = People.aniso || 4;                 // (the game sets its graphics card's best, up to 8: cloth and skin at an angle stay sharp)
     return tex;
   }
   // texture keys match materials whose name equals or ends with the key
@@ -272,7 +272,7 @@
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-        if (m.map) m.map.anisotropy = 4;
+        if (m.map) m.map.anisotropy = People.aniso || 4;
         const nm = m.normalMap && m.normalMap.image;     // a 1-pixel stand-in normal map lights the model in flat, blotchy facets
         if (nm && (nm.width || 0) <= 4 && (nm.height || 0) <= 4) { m.normalMap = null; m.needsUpdate = true; }
         m.envMapIntensity = entry.role === 'referee' ? 0.55 : 0.3; // the arena is dark; only the table is bright

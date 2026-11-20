@@ -196,3 +196,53 @@ body.studio-on>*:not(#app):not(#ostudio),body.studio-on #app>*:not(#world){displ
 .sound-row.own{border-color:rgba(201,164,92,.5);background:rgba(201,164,92,.06)}.sound-name{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#e8e2d4}.sound-file{font-size:10px;letter-spacing:.08em;color:rgba(232,226,212,.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sound-row.own .sound-file{color:#c9a45c}.sound-row button,.sound-load,.sounds-foot button{font:inherit;font-size:10px;letter-spacing:.14em;padding:7px 10px;border:1px solid rgba(201,164,92,.35);background:transparent;color:#e8e2d4;border-radius:3px;cursor:pointer}
 .sound-row button:disabled{opacity:.3;cursor:default}.sound-row button:hover:not(:disabled),.sound-load:hover,.sounds-foot button:hover{border-color:#c9a45c;color:#c9a45c}.sounds-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}.sounds-foot .primary{background:#c9a45c;color:#101412;border-color:#c9a45c}
+
+/* camera views, camera settings (7.1) */
+.camera-switcher button[data-camview].active,.camera-switcher .cam-gear.active{color:#f4dfaa;background:rgba(121,99,53,.32);border-color:rgba(215,190,129,.6)}
+.camera-switcher{gap:4px}.camera-switcher button{padding:6px 7px;font-size:9px;letter-spacing:.6px}
+.camera-switcher .cam-gear{font-size:11px;padding:4px 7px}
+.camera-switcher #angle-back,.camera-switcher #angle-next{display:none}
+.camera-switcher.tv-on #angle-back,.camera-switcher.tv-on #angle-next{display:inline-block}
+.cam-panel{position:absolute;z-index:6;left:42px;bottom:203px;width:268px;padding:11px 13px 12px;background:linear-gradient(125deg,rgba(6,21,17,.92),rgba(14,37,29,.92));border:1px solid rgba(213,223,197,.2);border-radius:4px;backdrop-filter:blur(8px);box-shadow:0 14px 34px rgba(0,0,0,.4)}
+.cam-panel[hidden]{display:none}
+.cam-head{display:flex;justify-content:space-between;align-items:center;font:700 8px/1.3 Arial,sans-serif;letter-spacing:1.7px;color:#d6be8d;margin-bottom:6px}
+.cam-head button{background:none;border:0;color:#d8ddd0;font-size:15px;line-height:1;cursor:pointer;padding:0 2px}
+.cam-slider{display:grid;grid-template-columns:78px 1fr 44px;align-items:center;gap:6px;margin-top:4px;font:700 8px/1 Arial,sans-serif;letter-spacing:.5px;color:#c9d2c4}
+.cam-slider input{width:100%;accent-color:#d9bc83;height:18px}
+.cam-slider b{font-weight:500;color:#e8dcbc;text-align:right;font-size:8px}
+.cam-row{display:flex;gap:5px;margin-top:7px}
+.cam-row button{flex:1;border:1px solid rgba(213,223,197,.18);padding:8px 4px;font:700 7.5px/1.1 Arial,sans-serif;letter-spacing:.32px;color:#d8ddd0;background:rgba(12,27,23,.72);border-radius:3px;cursor:pointer}
+.cam-row button.active{color:#f4dfaa;background:rgba(121,99,53,.27);border-color:rgba(215,190,129,.52)}
+.cam-row button:hover{background:rgba(70,94,66,.58);border-color:#e5c58f}
+@media(min-width:1600px){.cam-panel{left:55px;bottom:214px}}
+@media(max-width:1050px){.cam-panel{left:23px;bottom:187px}}
+@media(max-width:790px){.cam-panel{left:15px;bottom:161px}}
+@media(max-height:700px){.cam-panel{bottom:164px}}
+/* touch: fine aim strip, pull-back power, a thumb-sized spin pad */
+.touch-aim,.pull-power{display:none}
+body.touch .touch-aim{display:flex;position:absolute;z-index:5;left:50%;transform:translateX(-50%);bottom:calc(var(--dock-space,170px) + 14px);width:min(420px,58vw);height:34px;align-items:center;justify-content:center;border:1px solid rgba(218,223,199,.22);border-radius:17px;background:rgba(9,24,21,.6);color:#cdd5c4;font:700 8px/1 Arial,sans-serif;letter-spacing:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+body.touch .touch-aim.active{border-color:var(--gold);color:#f4dfaa}
+body.touch .pull-power{display:block;position:absolute;z-index:5;right:16px;top:50%;transform:translateY(-50%);width:46px;height:min(46vh,300px);border:1px solid rgba(218,223,199,.24);border-radius:23px;background:rgba(9,24,21,.62);touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden}
+body.touch .pull-power i{position:absolute;left:0;right:0;top:0;height:calc(var(--pull,0)*100%);background:linear-gradient(180deg,rgba(217,188,131,.15),rgba(217,188,131,.62))}
+body.touch .pull-power::after{content:attr(data-p);position:absolute;left:0;right:0;bottom:12px;text-align:center;font:700 9px/1 Arial,sans-serif;letter-spacing:1px;color:#f0d7a1}
+body.touch .pull-power.pulling{border-color:var(--gold)}
+body.touch .spin-pad{width:92px;height:92px}
+body.studio-on .touch-aim,body.studio-on .pull-power{display:none}
+/* small screens: the scene director folds into its title (tap it); the camera controls sit above the shot controls */
+@media(max-height:520px),(max-width:600px){
+.scene-controls:not(.open)>:not(.scene-title){display:none}
+.scene-controls:not(.open){width:auto;padding:7px 10px}.scene-controls:not(.open) .scene-title{gap:12px}
+.scene-controls .scene-title{cursor:pointer;margin-bottom:0}
+.scene-controls.open .scene-title{margin-bottom:8px}
+.scene-controls.open{max-height:calc(100vh - var(--dock-space,160px) - 120px);overflow:auto}
+.scene-title::after{content:'▸';margin-left:8px;color:#d6be8d}
+.scene-controls.open .scene-title::after{content:'▾'}
+body.touch .scene-controls{bottom:calc(var(--dock-space,160px) + 82px)}
+body.touch .camera-switcher{bottom:calc(var(--dock-space,160px) + 8px)}
+body.touch .camera-switcher button{padding:9px 9px;font-size:10px}
+body.touch .camera-tag{bottom:calc(var(--dock-space,160px) + 52px)}
+body.touch .cam-panel{bottom:calc(var(--dock-space,160px) + 52px);max-height:calc(100vh - var(--dock-space,160px) - 70px);overflow:auto}
+}
+body.touch .touch-aim{left:auto;right:74px;transform:none;width:min(360px,44vw);bottom:calc(var(--dock-space,160px) + 8px)}
+@media(max-aspect-ratio:1/1){body.touch .touch-aim{right:auto;left:50%;transform:translateX(-50%);width:70vw;bottom:calc(var(--dock-space,160px) + 54px)}}
+.spin-marker.risk{border-color:#e0574a!important;box-shadow:0 0 0 3px rgba(224,87,74,.28)}

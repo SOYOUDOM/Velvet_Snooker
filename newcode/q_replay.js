@@ -91,18 +91,58 @@
     for(const m of fallingMeshes)m.visible=false;
   }
   function ballAt(r,id,t){const [a,b,k]=frameAt(r,t),o=r.ids.indexOf(id)*8;return new T.Vector3(lerp(a[o],b[o],k),lerp(a[o+1],b[o+1],k),lerp(a[o+2],b[o+2],k));}
-  function playReplay(r,label,onEnd,kind){
-    const d=r.d||drama(r),last=r.frames[r.frames.length-1].t;
-    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,reacted:0,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot});
-    // The replay is a cut-away: the players are posed for the recorded shot and
-    // put back exactly as they were when it ends.
-    if(!cine.snap)cine.snap=playersSnapshot();
+  // The balls' paths, drawn on the cloth as the replay runs: the white's and
+  // those of the balls that mattered (the one that went in first), in their colours.
+  const PATH_COL={cue:0xf4f4ec,red:0xd8262f,yellow:0xf2c51c,green:0x19a04c,brown:0x8a4d26,blue:0x2f66dc,pink:0xf4a3bd,black:0x2b2b2b};
+  let replayPaths=null;
+  function clearPaths(){
+    if(!replayPaths)return;scene.remove(replayPaths.g);
+    for(const p of replayPaths.list){p.mesh.geometry.dispose();p.mesh.material.dispose();}
+    replayPaths=null;
+  }
+  function buildPaths(r,keyId){
+    clearPaths();const list=[];
+    r.ids.forEach((id,i)=>{let travel=0,lx=null,lz=null;const pts=[];
+      for(const fr of r.frames){const o=i*8,f=fr.f;
+        if(f[o+7]<.5||f[o+1]<BALL_Y-.012){if(pts.length&&lx!==null)break;continue;}
+        const x=f[o],z=f[o+2];
+        if(lx===null||Math.hypot(x-lx,z-lz)>.009){if(lx!==null)travel+=Math.hypot(x-lx,z-lz);pts.push([x,z,fr.t]);lx=x;lz=z;}}
+      if(travel>.08&&pts.length>2)list.push({id,type:r.types[i],pts,travel});});
+    list.sort((a,b)=>((b.type==='cue')-(a.type==='cue'))||((b.id===keyId)-(a.id===keyId))||(b.travel-a.travel));
+    const g=new T.Group(),W=.0055,Y=CLOTH_Y+.0017;
+    const keep=list.slice(0,4);
+    for(const p of keep){const n=p.pts.length,pos=new Float32Array(n*6),idx=[];
+      for(let k=0;k<n;k++){const a=p.pts[Math.max(0,k-1)],b=p.pts[Math.min(n-1,k+1)];let tx=b[0]-a[0],tz=b[1]-a[1];const l=Math.hypot(tx,tz)||1;tx/=l;tz/=l;
+        const [x,z]=p.pts[k];pos.set([x-tz*W,Y,z+tx*W,x+tz*W,Y,z-tx*W],k*6);
+        if(k<n-1)idx.push(2*k,2*k+1,2*k+2,2*k+1,2*k+3,2*k+2);}
+      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));geo.setIndex(idx);geo.setDrawRange(0,0);
+      const mat=new T.MeshBasicMaterial({color:PATH_COL[p.type]??0xffffff,transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,side:T.DoubleSide});
+      p.mesh=new T.Mesh(geo,mat);p.mesh.renderOrder=3;p.mesh.frustumCulled=false;g.add(p.mesh);}
+    scene.add(g);replayPaths={g,list:keep};
+  }
+  function updatePaths(t){
+    if(!replayPaths)return;
+    for(const p of replayPaths.list){let k=0;while(k<p.pts.length&&p.pts[k][2]<=t)k++;p.mesh.geometry.setDrawRange(0,Math.max(0,k-1)*6);}
+  }
+  // A remarkable shot is shown twice: close and slow (the strike, the key ball,
+  // the pocket), then from high above at nearly full speed with the paths drawn.
+  function posePlayers(r){
     const sh=PL[r.shooter];
     for(const pl of PL){Object.assign(pl,{fade:Math.max(pl.fade,.99),fadeTo:1,path:null,v:0,feet:null,feetNow:null,t:0});
       if(pl===sh){const st=stanceFor(pl,r.aim,r.cue0[0],r.cue0[1],0);
         Object.assign(pl,{act:'down',stLin:1,stance:1,sitLin:0,aim:r.aim,cue:r.cue0,pull:0,goal:{kind:'shot'},
           x:(st.feet[0].x+st.feet[1].x)/2,z:(st.feet[0].z+st.feet[1].z)/2,yaw:Math.atan2(st.F.x,st.F.z)});pl.w.sit=0;pl.w.walk=0;}
       else{Object.assign(pl,{act:'sit',stLin:0,stance:0,sitLin:1,x:CHAIRS[pl.i][0],z:CHAIRS[pl.i][1],yaw:0,goal:chairGoal(pl.i)});pl.w.walk=0;}}
+  }
+  function playReplay(r,label,onEnd,kind){
+    const d=r.d||drama(r),last=r.frames[r.frames.length-1].t;
+    Object.assign(cine,{on:true,kind,data:r,label,onEnd,t:-1.25,reacted:0,dur:last,shooter:r.shooter,events:0,cut:true,react:d.score>=4||kind==='ending',keyId:d.key,keyPot:d.keyPot,
+      pass:1,twoPass:kind==='shot'&&last<6.5});
+    buildPaths(r,d.key);
+    // The replay is a cut-away: the players are posed for the recorded shot and
+    // put back exactly as they were when it ends.
+    if(!cine.snap)cine.snap=playersSnapshot();
+    posePlayers(r);
     replayUI.querySelector('.replay-tag b').textContent=label?'· '+label:'';
     replayUI.querySelector('.replay-title').textContent=kind==='ending'?label:'';
     document.body.classList.add('replay-on');
@@ -110,7 +150,7 @@
   }
   function endCine(){
     if(!cine.on)return;
-    const cb=cine.onEnd;cine.on=false;cine.data=null;
+    const cb=cine.onEnd;cine.on=false;cine.data=null;clearPaths();
     document.body.classList.remove('replay-on','intro-on','intro-late');
     playersRestore(cine.snap);cine.snap=null;
     ai.thinkUntil=Math.max(ai.thinkUntil,performance.now()+700);
@@ -127,7 +167,13 @@
     const cue0=new T.Vector3(r.cue0[0],BALL_Y,r.cue0[1]);
     const pot=cine.keyPot,tPot=pot?pot.t:null,end=cine.dur;
     let pos,look,fov=38,phase;
-    if(t<.22){phase='strike';
+    if(cine.pass===2){phase='above';   // high over the play, from behind the shot, drifting slowly round
+      let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of (replayPaths?replayPaths.list:[]))for(const q of p.pts){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);z0=Math.min(z0,q[1]);z1=Math.max(z1,q[1]);}
+      if(x0>x1){x0=-HX;x1=HX;z0=-HZ;z1=HZ;}
+      const c=new T.Vector3((x0+x1)/2,CLOTH_Y,(z0+z1)/2),ext=Math.max(.7,Math.hypot(x1-x0,z1-z0)*.62+.25),el=1.05,swing=(t-1)*.05;
+      const back=new T.Vector3(-Math.cos(aim+swing),0,-Math.sin(aim+swing)),d=ext/Math.tan(19*PI/180);
+      pos=c.clone().addScaledVector(back,d*Math.cos(el)).add(_v4.set(0,d*Math.sin(el),0));look=c;fov=38;}
+    else if(t<.22){phase='strike';
       const side=Math.abs(cue0.z+Rt.z*1.2)<OUT_Z+2.5?1:-1;
       pos=cue0.clone().addScaledVector(F,-.55).addScaledVector(Rt,1.25*side).add(_v4.set(0,.42,0));
       look=cue0.clone().addScaledVector(F,-.5).add(_v4.set(0,.16,0));fov=40;}
@@ -174,18 +220,22 @@
     if(!cine.on)return false;
     if(cine.kind==='intro')return updateIntro(dt);
     const r=cine.data,tPot=cine.keyPot?cine.keyPot.t:null;
-    const slow=cine.t<0?.85:tPot!==null&&Math.abs(cine.t-tPot)<.5?.28:.5;
+    const slow=cine.pass===2?(cine.t<0?1:.9):cine.t<0?.85:tPot!==null&&Math.abs(cine.t-tPot)<.5?.28:.5;
     const prev=cine.t;cine.t+=dt*slow;
+    if(cine.twoPass&&cine.pass===1&&cine.t>cine.dur+.3){   // the second angle: from above, the paths drawn again from the start
+      cine.pass=2;cine.t=-.45;cine.cut=true;posePlayers(r);
+      replayUI.querySelector('.replay-tag b').textContent=(cine.label?'· '+cine.label+' ':'')+'· FROM ABOVE';}
+    updatePaths(cine.t);
     if(prev>=0||cine.t>=0)replaySounds(Math.max(prev,-1),cine.t);
     const sh=PL[cine.shooter];
     if(sh){sh.pull=cueReplayPull(cine.t);
       if(cine.t>.5&&sh.goal.kind==='shot')sh.goal={kind:'hold'};      // stands up and watches it go
       const reactAt=cine.dur+.15;
-      if(cine.t>reactAt&&cine.react&&!cine.reacted&&sh.stLin<=0){cine.reacted=1;   // his reaction, and the room's: different every time
+      if(cine.t>reactAt&&cine.react&&!cine.reacted&&sh.stLin<=0&&(!cine.twoPass||cine.pass===2)){cine.reacted=1;   // his reaction, and the room's: different every time
         greetCrowd(cine.shooter,reactProfile(cine.shooter)==='composed'?['nod','acknowledge','salute']:['fistpump','acknowledge','salute','satisfied','wave','nod']);
         crowdReact('cheer');if(cine.kind==='ending')sound('frame');else sound('cheer');}}
     replayCamera(dt);
-    if(cine.t>cine.dur+(cine.react?2.6:1.0))endCine();
+    if(cine.t>cine.dur+(cine.react?2.6:1.0)&&(!cine.twoPass||cine.pass===2))endCine();
     return true;
   }
   // The cue drawn in replays (the live cue code draws the cue for play).

@@ -1251,10 +1251,11 @@
   function startPeople(){
     const P=window.VelvetPeople,man=window.VELVET_CHARACTERS;
     if(!P||!man){console.warn('VELVET: characters/characters.js not found; playing without referee and audience.');return;}
+    P.aniso=maxAniso;
     P.load(man).then(spawnPeople).catch(e=>console.warn('VELVET: could not load the characters',e));
   }
   function setVenue(id){
-    if(!VENUES[id])return;venueId=id;
+    if(!VENUES[id])return;venueId=id;setNap(id);
     try{localStorage.setItem('velvet.venue',id);}catch(e){}
     buildArena(VENUES[id]);spawnCrowd();
     if($('venue-select'))$('venue-select').value=id;showVenueCard();
@@ -1604,7 +1605,12 @@
   const _size=new T.Vector2();
   function resize(){
     width=canvas.clientWidth||window.innerWidth;height=canvas.clientHeight||window.innerHeight;
-    const ratio=Math.min(window.devicePixelRatio||1,QUALITY[quality].ratio);
+    // Sharpness: up to the screen's own pixel density, within a budget of
+    // pixels per quality level - the same work a laptop does at that level - so
+    // a phone (a small screen with three pixels to every point) is drawn at its
+    // full sharpness instead of being stretched up from a third of it.
+    const budget={high:3.4e6,medium:1.9e6,low:1.15e6}[quality]||1.9e6,css=Math.max(1,width*height);
+    const ratio=Math.min(window.devicePixelRatio||1,Math.max(QUALITY[quality].ratio,Math.sqrt(budget/css)));
     if(Math.abs(renderer.getPixelRatio()-ratio)>.01){renderer.setPixelRatio(ratio);if(composer)composer.setPixelRatio(ratio);}
     renderer.getSize(_size);
     if(_size.x!==width||_size.y!==height){renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();if(composer)composer.setSize(width,height);}
@@ -1667,6 +1673,7 @@
     $('power-slider').style.background=`linear-gradient(90deg,#d9bc83 0%,#d9bc83 ${p}%,rgba(199,222,200,.25) ${p}%,rgba(199,222,200,.25) 100%)`;
   }
   function paintSpin(x,y){
+    const risk=Math.hypot(x,y)>.86;$('spin-marker').classList.toggle('risk',risk);$('spin-pad').title=risk?'Miscue risk: struck this far off centre the tip can slip off the white':'';
     $('spin-marker').style.left=(50+x*39)+'%';
     $('spin-marker').style.top=(50-y*39)+'%';
     $('topspin-value').textContent=Math.round(y*100)+'%';
@@ -2072,6 +2079,10 @@
   // motion and the 2/5*m*r² moment of inertia; sidespin is angular velocity.
   const STEP=1/180, RESTITUTION=.947, CUSHION_RESTITUTION=.79, GRAVITY=9.81;
   const SLIDING_MU=.17, ROLLING_DECEL=.21, BALL_MASS=.142;
+  const NAP={velvet:1,theatre:1.25,palace:.9,arena:.8,dome:.75,stage:.7,'world-championship-arena':.65};
+  let napK=.011;   // m/s² (set per venue: an old club cloth carries a ball more than a championship one)
+  function setNap(id){napK=.011*(NAP[id]??1);}
+  setNap(venueId);
   function integrateRotation(b,dt){
     const wx=b.wx,wy=b.wy,wz=b.wz,mag=Math.hypot(wx,wy,wz);
     if(mag<1e-5)return;
@@ -2102,6 +2113,11 @@
       b.wx*=factor;b.wz*=factor;
     }
     b.wy*=Math.exp(-1.15*dt);
+    // The nap: the cloth's pile lies from the baulk end towards the black. A
+    // slow ball rolling across it is carried a little with it - a few
+    // centimetres over a slow roll across the table, more on some cloths.
+    if(napK>0){const sp=Math.hypot(b.vx,b.vz);
+      if(sp>.006&&sp<.62){const across=Math.abs(b.vz)/sp,f=napK*across*(sp<.26?1:(.62-sp)/.36);b.vx+=f*dt;b.wz-=f*dt/R;}}
     if(Math.hypot(b.vx,b.vz)<.004&&Math.hypot(b.wx,b.wz)*R<.006){
       b.vx=b.vz=b.wx=b.wz=0;
     }
@@ -2140,7 +2156,10 @@
     const tx=-nz,tz=nx;
     // Tangential contact velocity includes both ball spins.
     const surface=(rvx*tx+rvz*tz)+R*(a.wy+b.wy);
-    const jt=clamp(-surface/7,-impulse*.055,impulse*.055);
+    // throw: the balls grip each other through the contact; the friction is
+    // larger the slower they slide on each other (as measured on real balls)
+    const mu=.0095+.108*Math.exp(-1.088*Math.abs(surface));
+    const jt=clamp(-surface/7,-impulse*mu,impulse*mu);
     a.vx-=jt*tx;a.vz-=jt*tz;b.vx+=jt*tx;b.vz+=jt*tz;
     a.wy+=2.5*jt/R;b.wy+=2.5*jt/R;
     if(back){a.x+=a.vx*back;a.z+=a.vz*back;b.x+=b.vx*back;b.z+=b.vz*back;}
@@ -2328,7 +2347,18 @@
     // Forward roll, screw and english are encoded in angular momentum
     // (topspin -> more forward angular speed, backspin -> reverse screw).
     // cueStrikeState is shared with the aiming guide's path prediction.
-    const strike=cueStrikeState(cue,state.aim,cfg),velocity=strike.velocity;
+    const strike=cueStrikeState(cue,state.aim,cfg);let velocity=strike.velocity;
+    // A miscue: struck too near the edge of the white, the tip can slip off it -
+    // more likely the harder the hit. Not a foul by itself; the white just
+    // dribbles away off line with a click.
+    const off=Math.hypot(cfg.spinX||0,cfg.spinY||0),miscueRisk=Math.pow(clamp((off-.86)/.14,0,1),2)*(.08+.26*clamp(cfg.power/100,0,1))*(byBot?.55:1);
+    if(miscueRisk>0&&Math.random()<miscueRisk){
+      const side=Math.sign(cfg.spinX||((Math.random()<.5)?-1:1)),dev=side*(.08+Math.random()*.16),k=.12+Math.random()*.22,a=state.aim+dev;
+      velocity*=k;strike.vx=Math.cos(a)*velocity;strike.vz=Math.sin(a)*velocity;
+      strike.wx=Math.sin(a)*velocity/R;strike.wz=-Math.cos(a)*velocity/R;strike.wy*=.15;
+      setTimeout(()=>{sound('miscue',velocity,cue.x,cue.z);message('MISCUE','THE TIP SLIPPED OFF THE CUE BALL',1700);},30);
+      if(window.__miscues!=null)window.__miscues++;
+    }
     cue.vx=strike.vx;cue.vz=strike.vz;cue.wx=strike.wx;cue.wz=strike.wz;cue.wy=strike.wy;
     cue.spinX=cfg.spinX;cue.spinY=cfg.spinY;
     const lineInfo=shootLine();
@@ -2670,9 +2700,11 @@
     let bias=0;
     if(pick.kind==='pot'&&pick.target&&cb0){const toward=Math.sign(wrapA(Math.atan2(pick.target.z-cb0.z,pick.target.x-cb0.x)-pick.aim));
       bias=toward*Math.pow(1-clamp(pick.cut??1,0,1),2)*skill.aim*(Math.random()<.72?1.1:-.6)*stroke;}
-    return{...pick,aim:pick.aim+bias+aimSigma*normalRandom(),
-      power:Math.round(clamp(base.power+normalRandom()*skill.power*(.6+base.power/70)*(pick.kind==='pot'?1:.7),8,100)),
-      spinX:clamp(base.spinX+normalRandom()*skill.spin,-1,1),spinY:clamp(base.spinY+normalRandom()*skill.spin,-1,1)};
+    // (a player feels the side he actually puts on and aims for its squirt: an error in the side
+    //  changes where the white goes after the hit, not the line it leaves on)
+    const power=Math.round(clamp(base.power+normalRandom()*skill.power*(.6+base.power/70)*(pick.kind==='pot'?1:.7),8,100));
+    const spinX=clamp(base.spinX+normalRandom()*skill.spin,-1,1),feel=(spinX-(base.spinX||0))*SQUIRT*(.85+.3*clamp(power/100,0,1));
+    return{...pick,aim:pick.aim+bias+aimSigma*normalRandom()+feel,power,spinX,spinY:clamp(base.spinY+normalRandom()*skill.spin,-1,1)};
   }
   // Ball in hand: break off from beside the yellow; otherwise place the white
   // where the best pot is.
@@ -2826,6 +2858,12 @@
     const ctx=ensureAudio();if(!ctx||sfxState!=='ready')return;
     if(type==='score'||type==='foul')return;
     if(type==='cheer'||type==='applause'||type==='gasp'||type==='frame'){crowdSound(ctx,type);return;}
+    if(type==='miscue'){const now=ctx.currentTime,[pan,near]=soundPlace(x,z),out=ctx.createGain();out.gain.value=.55*near;
+      let o=out;if(ctx.createStereoPanner){const pn=ctx.createStereoPanner();pn.pan.value=pan;out.connect(pn);o=pn;}o.connect(tableIn);
+      const tk=ownSfx('cue')||sfxBuf.cue_0_0;if(tk){const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=tk;s.playbackRate.value=1.75;g.gain.value=.45;s.connect(g);g.connect(out);s.start(now+.003);}
+      const n=Math.floor(ctx.sampleRate*.09),nb=ctx.createBuffer(1,n,ctx.sampleRate),d=nb.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2);
+      const ns=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),ng=ctx.createGain();ns.buffer=nb;bp.type='bandpass';bp.frequency.value=2600;bp.Q.value=1.4;ng.gain.value=.5;
+      ns.connect(bp);bp.connect(ng);ng.connect(out);ns.start(now+.012);return;}
     const fam={click:'click',shot:'cue',cushion:'cushion',pocket:'pocket'}[type];if(!fam)return;
     const v=Math.max(.02,Math.abs(velocity)),now=ctx.currentTime,L=SFX.layers[fam]||[1];
     if(now-(sfxLastAt[fam]||0)<.007||voicesActive>16)return;
@@ -2900,10 +2938,15 @@
   // ball held still, until it touches a ball, drops into a pocket, stops, or
   // has used its cushions. Before the first contact only the cue ball moves,
   // so this is exactly the path the real shot will take - cushions included.
+  // Squirt: a cue ball struck off centre is pushed a little off the line, away
+  // from the side struck (about 1.6° with full side, more for a harder hit).
+  // The aiming guide and the bot's planning use this same strike.
+  const SQUIRT=1.6*PI/180;
   function cueStrikeState(cue,aim,cfg){
     const p=cfg.power/100,velocity=.20+4.7*Math.pow(p,1.23),forwardSpin=velocity/R*(1+cfg.spinY*2.4);
-    return{x:cue.x,z:cue.z,vx:Math.cos(aim)*velocity,vz:Math.sin(aim)*velocity,
-      wx:Math.sin(aim)*forwardSpin,wz:-Math.cos(aim)*forwardSpin,wy:cfg.spinX*52,q:[0,0,0,1],velocity};
+    const a=aim-(cfg.spinX||0)*SQUIRT*(.85+.3*p);
+    return{x:cue.x,z:cue.z,vx:Math.cos(a)*velocity,vz:Math.sin(a)*velocity,
+      wx:Math.sin(a)*forwardSpin,wz:-Math.cos(a)*forwardSpin,wy:cfg.spinX*52,q:[0,0,0,1],velocity};
   }
   function contactT(ax,az,bx,bz,ox,oz){
     const dx=bx-ax,dz=bz-az,fx=ax-ox,fz=az-oz,a=dx*dx+dz*dz,b=2*(fx*dx+fz*dz),c=fx*fx+fz*fz-4*R*R;
@@ -3111,18 +3154,7 @@
   }
 
   // ---- INPUT, MENUS AND ACCESSIBILITY --------------------------------------
-  let draggingOrbit=false,dragPointer=null,lastDragX=0,lastDragY=0,cueDragPointer=null,panDrag=null;
-  // The free camera: no automatic direction, the view stays where you leave it.
-  function freeCam(){setAutoCamera(false);cam.follow=false;cam.mode=-1;cameraLabel('FREE CAMERA','◎');}
-  // Pan: the point the camera looks at moves with the mouse, in the plane of the picture (sideways, up and down).
-  const _pr=new T.Vector3(),_pu=new T.Vector3();
-  function panCamera(dx,dy){
-    freeCam();
-    const r=distFor(cam.curRadius,cam.curFov)*cam.curZoom,k=2*Math.tan(cam.curFov*PI/360)*r/Math.max(1,height);   // metres per pixel at the target
-    camera.updateMatrixWorld();_pr.setFromMatrixColumn(camera.matrixWorld,0);_pu.setFromMatrixColumn(camera.matrixWorld,1);
-    const lim=[[-HX-4,HX+4],[FLOOR_Y,FLOOR_Y+4.5],[-HZ-4,HZ+4]],m=[-dx*k*_pr.x+dy*k*_pu.x,-dx*k*_pr.y+dy*k*_pu.y,-dx*k*_pr.z+dy*k*_pu.z];
-    for(let j=0;j<3;j++){const v=clamp(cam.target[j]+m[j],lim[j][0],lim[j][1]);cam.curTarget[j]+=v-cam.target[j];cam.target[j]=v;}
-  }
+  let cueDragPointer=null;
   function activeOverlay(id,active){$(id).classList.toggle('active',active);}
   function isAnyOverlayOpen(){return ['welcome-screen','help-screen','menu-screen','end-screen','decision-screen','tournament-screen','sounds-screen'].some(id=>$(id).classList.contains('active'));}
   const spinPad=$('spin-pad');
@@ -3137,11 +3169,22 @@
   $('reset-spin').addEventListener('click',()=>setSpin(0,0));
   $('power-slider').addEventListener('input',syncPower);
   $('shoot-button').addEventListener('click',()=>playShot(false));
-  $('camera-button').addEventListener('click',()=>setCamera(cam.mode+1));
-  $('auto-camera-button').addEventListener('click',()=>setAutoCamera(!autoCamera));
-  $('angle-back').addEventListener('click',()=>setCamera(cam.mode-1));
-  $('angle-next').addEventListener('click',()=>setCamera(cam.mode+1));
-  $('angle-top').addEventListener('click',()=>setCamera(OVERHEAD_PRESET));
+  $('camera-button').addEventListener('click',()=>cycleView(1));
+  $('auto-camera-button').addEventListener('click',toggleAutoTv);
+  $('angle-back').addEventListener('click',()=>tvAngle(-1));
+  $('angle-next').addEventListener('click',()=>tvAngle(1));
+  document.querySelectorAll('[data-camview]').forEach(b=>b.addEventListener('click',()=>goView(b.dataset.camview)));
+  document.querySelector('.scene-title')?.addEventListener('click',()=>document.querySelector('.scene-controls')?.classList.toggle('open'));   // (folds away on small screens)
+  // the camera settings: sensitivities, smoothing, the length of a change of view, the shot follow, inverted vertical
+  {const panel=$('cam-panel'),gear=$('cam-settings');
+    const show=on=>{if(!panel)return;panel.hidden=!on;if(gear){gear.classList.toggle('active',on);gear.setAttribute('aria-expanded',String(on));}if(on)paintCamUI();};
+    gear?.addEventListener('click',()=>show(panel.hidden));$('cam-close')?.addEventListener('click',()=>show(false));
+    for(const k of ['rot','zoom','pan','smooth','trans'])$('cam-'+k)?.addEventListener('input',ev=>{camSet[k]=clamp(+ev.target.value,k==='smooth'?0:.2,k==='trans'?1.6:2.5);saveCamSet();paintCamUI();});
+    $('cam-autotv')?.addEventListener('click',toggleAutoTv);
+    $('cam-invert')?.addEventListener('click',()=>{camSet.invertY=!camSet.invertY;saveCamSet();paintCamUI();});
+    $('cam-reset-view')?.addEventListener('click',resetCamera);
+    $('cam-reset')?.addEventListener('click',()=>{Object.assign(camSet,CAM_DEFAULTS);saveCamSet();paintCamUI();message('CAMERA','DEFAULT SETTINGS RESTORED',1300);});
+    labelView();}
   $('focus-pick').addEventListener('click',()=>{
     focusPicking=!focusPicking;$('focus-pick').classList.toggle('active',focusPicking);
     if(focusPicking){setAutoCamera(false);message('PICK FOCUS','CLICK ANY POSITION ON THE TABLE');}
@@ -3427,92 +3470,154 @@
   ['menu-screen','help-screen'].forEach(id=>$(id).querySelector('.overlay-backdrop').addEventListener('click',()=>activeOverlay(id,false)));
   canvas.addEventListener('contextmenu',ev=>ev.preventDefault());
   canvas.addEventListener('mousedown',ev=>{if(ev.button===1)ev.preventDefault();});   // (no auto-scroll on a middle drag)
-  canvas.addEventListener('pointerdown',ev=>{
-    if(isAnyOverlayOpen()||!state.started)return;
-    // Shift + middle or left drag moves the camera sideways and up and down, Ctrl + middle drag zooms, as in
-    // Blender; a Shift + click that does not move still picks a focus point on the table.
-    if((ev.shiftKey&&(ev.button===1||ev.button===0))||(ev.ctrlKey&&ev.button===1)){
-      panDrag={id:ev.pointerId,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,moved:false,b:ev.button,zoom:!ev.shiftKey};
-      canvas.setPointerCapture(ev.pointerId);ev.preventDefault();return;
-    }
-    if(ev.button===0&&focusPicking){
-      const point=screenToTable(ev.clientX,ev.clientY);
-      if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + CLICK ANOTHER LOCATION TO REFOCUS',1550);}
-      return;
-    }
-    // Orbiting the camera is always allowed, including while the opponent plays.
-    if(ev.button===2||ev.button===1||ev.altKey){
-      draggingOrbit=true;dragPointer=ev.pointerId;lastDragX=ev.clientX;lastDragY=ev.clientY;
-      canvas.setPointerCapture(ev.pointerId);setAutoCamera(false);return;
-    }
-    if(!humanTurn())return;
-    if(ev.button!==0||state.inShot)return;
+  // Pointers on the picture.
+  //   Mouse: the left button aims - or, with the FREE camera, turns it; the
+  //   right button moves the camera (in the aiming view it raises it or swings
+  //   it round the cue ball, never touching the aim); the middle button or
+  //   Alt + drag turns it; Ctrl / Cmd + drag moves it; Ctrl + middle drag and
+  //   the wheel zoom; Shift makes any of it fine. Shift + click picks a focus
+  //   point; double-click a ball to focus on it.
+  //   Touch: one finger aims (a tap on a ball aims at it) - or turns the FREE
+  //   camera; two fingers pinch to zoom and slide to move the camera.
+  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null;
+  function aimAtPoint(px,pz){const cb=cueBall();if(!cb)return;state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();}
+  // a click or a tap on the table: a colour to nominate, or where to aim
+  function tableClick(ev){
+    if(!humanTurn()||state.inShot||isAnyOverlayOpen())return false;
     const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
-    if(!point||!cb)return;
+    if(!point||!cb)return false;
     const [px,pz]=point;
-    // Interact with white in the D. Clicking in an empty part of the D also repositions it.
-    if(state.ballInHand&&(len2(px-cb.x,pz-cb.z)<R*3.3||cueInD(px,pz))){
-      if(cueInD(px,pz))moveCueInD(px,pz);
-      cueDragPointer=ev.pointerId;canvas.setPointerCapture(ev.pointerId);
-      message('CUE BALL IN HAND','DRAG INSIDE THE D · RELEASE TO SET POSITION',1700);return;
-    }
-    // Nomination is performed by selecting the coloured ball on the felt.
     if(state.phase==='color'){
       const nearest=balls.filter(b=>!b.pocketed&&b.type!=='cue').map(b=>({b,d:len2(px-b.x,pz-b.z)})).sort((a,b)=>a.d-b.d)[0];
       if(nearest&&nearest.d<R*2.55){
         if(nearest.b.type==='red')message('RED IS NOT SELECTABLE','CLICK A COLOURED BALL ON THE TABLE',1400);
         else selectColour(nearest.b.type);
-        return;
-      }
+        return true;}
     }
-    state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();
+    if(len2(px-cb.x,pz-cb.z)>.035)aimAtPoint(px,pz);return true;
+  }
+  const pickFocusAt=ev=>{const point=screenToTable(ev.clientX,ev.clientY);
+    if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + CLICK ANOTHER LOCATION TO REFOCUS',1600);}};
+  canvas.addEventListener('pointerdown',ev=>{
+    if(ev.pointerType==='touch')document.body.classList.add('touch');
+    if(isAnyOverlayOpen()||!state.started)return;
+    if(ev.pointerType==='touch'){
+      touches.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+      if(touches.size>=2){   // two fingers: the camera - whatever the first finger began is undone
+        if(oneFinger&&oneFinger.moved&&!cam.sf){state.aim=oneFinger.aim0;autoNominate();}
+        oneFinger=null;camDrag=null;aimMoveX=null;if(cueDragPointer!=null){cueDragPointer=null;refreshUI();}
+        const [a,b]=[...touches.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,mx:(a.x+b.x)/2,my:(a.y+b.y)/2};
+        try{canvas.setPointerCapture(ev.pointerId);}catch(e){}return;}
+    }
+    if(ev.button===0&&focusPicking){pickFocusAt(ev);return;}
+    const cb=cueBall(),point=screenToTable(ev.clientX,ev.clientY),mod=ev.altKey||ev.ctrlKey||ev.metaKey;
+    // the white in hand: drag it inside the D (clicking an empty part of the D moves it there)
+    if(ev.button===0&&!mod&&!ev.shiftKey&&humanTurn()&&!state.inShot&&state.ballInHand&&point&&cb&&(len2(point[0]-cb.x,point[1]-cb.z)<R*3.3||cueInD(point[0],point[1]))){
+      if(cueInD(point[0],point[1]))moveCueInD(point[0],point[1]);
+      cueDragPointer=ev.pointerId;canvas.setPointerCapture(ev.pointerId);
+      message('CUE BALL IN HAND','DRAG INSIDE THE D · RELEASE TO SET POSITION',1700);return;
+    }
+    // a hand on the camera (allowed at any time, also while the opponent plays or the balls run)
+    let kind=null;
+    if(ev.button===2)kind='pan';
+    else if(ev.button===1)kind=ev.ctrlKey?'zoom':'orbit';
+    else if(ev.button===0&&ev.altKey)kind='orbit';
+    else if(ev.button===0&&(ev.ctrlKey||ev.metaKey))kind='pan';
+    else if(ev.button===0&&cam.view==='free')kind='orbit';
+    if(kind){camDrag={id:ev.pointerId,kind,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,moved:false,shiftClick:ev.shiftKey&&ev.button===0,click:ev.button===0};
+      try{canvas.setPointerCapture(ev.pointerId);}catch(e){}ev.preventDefault();return;}
+    if(ev.button!==0)return;
+    if(ev.shiftKey){shiftPress={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,moved:false};return;}   // a focus point, unless it moves (then: fine aiming)
+    if(ev.pointerType==='touch'){oneFinger={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,lx:ev.clientX,t0:performance.now(),aim0:state.aim,moved:false};return;}
+    tableClick(ev);
   });
-  canvas.addEventListener('pointerleave',()=>{aimMoveX=null;});
+  canvas.addEventListener('pointerleave',ev=>{if(ev.pointerType!=='touch')aimMoveX=null;});
   canvas.addEventListener('pointermove',ev=>{
-    if(panDrag&&panDrag.id===ev.pointerId){
-      const dx=ev.clientX-panDrag.x,dy=ev.clientY-panDrag.y;panDrag.x=ev.clientX;panDrag.y=ev.clientY;
-      if(!panDrag.moved&&Math.hypot(ev.clientX-panDrag.x0,ev.clientY-panDrag.y0)>4)panDrag.moved=true;
-      if(panDrag.moved){if(panDrag.zoom){cam.zoom=clamp(cam.zoom*Math.exp(dy*.006),.25,2.4);cam.curZoom=cam.zoom;freeCam();}else panCamera(dx,dy);}
+    if(ev.pointerType==='touch'&&touches.has(ev.pointerId)){
+      touches.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+      if(pinch&&touches.size>=2){const [a,b]=[...touches.values()],d=Math.hypot(a.x-b.x,a.y-b.y)||1,mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+        camZoom(Math.pow(d/pinch.d,camSet.zoom),mx,my);camPan(mx-pinch.mx,my-pinch.my,false);
+        pinch.d=d;pinch.mx=mx;pinch.my=my;return;}
+    }
+    if(camDrag&&camDrag.id===ev.pointerId){
+      const dx=ev.clientX-camDrag.x,dy=ev.clientY-camDrag.y;camDrag.x=ev.clientX;camDrag.y=ev.clientY;
+      if(!camDrag.moved&&Math.hypot(ev.clientX-camDrag.x0,ev.clientY-camDrag.y0)>4)camDrag.moved=true;
+      if(camDrag.moved){const fine=ev.shiftKey;
+        if(camDrag.kind==='pan')camPan(dx,dy,fine);
+        else if(camDrag.kind==='zoom')camZoom(Math.exp(-dy*.006*camSet.zoom*(fine?.3:1)));
+        else camOrbit(dx,dy,fine);}
       return;
     }
-    if(draggingOrbit&&dragPointer===ev.pointerId){
-      const dx=ev.clientX-lastDragX,dy=ev.clientY-lastDragY;lastDragX=ev.clientX;lastDragY=ev.clientY;
-      cam.az-=dx*.007;cam.el=clamp(cam.el+dy*.006,.24,1.558);cam.mode=-1;cam.follow=false;
-      cameraLabel('FREE CAMERA','◎');return;
-    }
+    if(shiftPress&&shiftPress.id===ev.pointerId&&Math.hypot(ev.clientX-shiftPress.x0,ev.clientY-shiftPress.y0)>4)shiftPress.moved=true;
     if(isAnyOverlayOpen()||state.inShot||!humanTurn())return;
     if(cueDragPointer===ev.pointerId){
       const point=screenToTable(ev.clientX,ev.clientY);
       if(point&&moveCueInD(point[0],point[1]))refreshUI();
       return;
     }
-    if(ev.pointerType==='touch'&&ev.buttons!==1)return;
+    if(ev.pointerType==='touch'){   // one finger: in the aiming view sideways turns the aim; in the others it points the aim
+      const f=oneFinger;if(!f||f.id!==ev.pointerId)return;
+      if(!f.moved&&Math.hypot(ev.clientX-f.x0,ev.clientY-f.y0)>7){f.moved=true;f.lx=ev.clientX;}
+      if(!f.moved)return;
+      if(playerViewActive()){state.aim+=(ev.clientX-f.lx)*.0019;f.lx=ev.clientX;state.aimKnown=true;autoNominate();return;}
+      const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
+      if(point&&cb&&len2(point[0]-cb.x,point[1]-cb.z)>.035)aimAtPoint(point[0],point[1]);
+      return;
+    }
     if(playerViewActive()){
       // Player view: sideways mouse movement turns the aim (hold Shift for fine).
       if(aimMoveX!==null){state.aim+=(ev.clientX-aimMoveX)*(ev.shiftKey?.00045:.0022);state.aimKnown=true;autoNominate();}
       aimMoveX=ev.clientX;return;
     }
     aimMoveX=null;
+    if(cam.view==='free')return;      // the free camera is for looking round: there the aim moves only with a click
     const point=screenToTable(ev.clientX,ev.clientY),cb=cueBall();
     if(point&&cb&&len2(point[0]-cb.x,point[1]-cb.z)>.035){
       state.aim=Math.atan2(point[1]-cb.z,point[0]-cb.x);state.aimKnown=true;autoNominate();
     }
   });
   const releaseDrag=ev=>{
-    if(panDrag&&panDrag.id===ev.pointerId){const d=panDrag;panDrag=null;
-      if(!d.moved&&d.b===0){const point=screenToTable(ev.clientX,ev.clientY);
-        if(point){focusOn(point[0],point[1],'SELECTED AREA');message('FOCUS SET','SHIFT + DRAG TO MOVE THE CAMERA · SHIFT + CLICK TO REFOCUS',1800);}}
+    if(ev.pointerType==='touch'){touches.delete(ev.pointerId);if(touches.size<2)pinch=null;}
+    if(camDrag&&camDrag.id===ev.pointerId){const d=camDrag;camDrag=null;
+      if(!d.moved&&ev.type==='pointerup'&&d.click){if(d.shiftClick)pickFocusAt(ev);else tableClick(ev);}
       return;}
-    if(dragPointer===ev.pointerId){draggingOrbit=false;dragPointer=null;}
+    if(shiftPress&&shiftPress.id===ev.pointerId){const sp=shiftPress;shiftPress=null;if(!sp.moved&&ev.type==='pointerup')pickFocusAt(ev);}
+    if(oneFinger&&oneFinger.id===ev.pointerId){const f=oneFinger;oneFinger=null;
+      if(!f.moved&&ev.type==='pointerup'&&performance.now()-f.t0<500)tableClick(ev);}
     if(cueDragPointer===ev.pointerId){cueDragPointer=null;refreshUI();message('CUE BALL PLACED','AIM AT THE BALL ON',1300);}
   };
   canvas.addEventListener('pointerup',releaseDrag);canvas.addEventListener('pointercancel',releaseDrag);
+  canvas.addEventListener('dblclick',ev=>{
+    if(isAnyOverlayOpen()||!state.started||playerViewActive())return;
+    const b=ballAtScreen(ev.clientX,ev.clientY);
+    if(b)focusOn(b.x,b.z,b.type==='cue'?'CUE BALL':b.type.toUpperCase()+' BALL',BALL_Y);
+  });
   canvas.addEventListener('wheel',ev=>{
     if(isAnyOverlayOpen())return;
     ev.preventDefault();
-    if(ev.ctrlKey||ev.metaKey){cam.zoom=clamp(cam.zoom*(1+ev.deltaY*.0011),.55,1.8);}else{
-      adjustPower(ev.deltaY>0?-3:3);}
+    const dy=ev.deltaMode===1?ev.deltaY*33:ev.deltaMode===2?ev.deltaY*400:ev.deltaY;
+    camZoom(Math.exp(-clamp(dy,-240,240)*.0011*camSet.zoom*(ev.shiftKey?.3:1)*(ev.ctrlKey?2.2:1)),ev.clientX,ev.clientY);
   },{passive:false});
+  // the wheel over the shot power still sets the power
+  document.querySelector('.power-section')?.addEventListener('wheel',ev=>{ev.preventDefault();adjustPower(ev.deltaY>0?-3:3);},{passive:false});
+  // Touch controls (shown once a finger is used): a strip for fine aiming and a
+  // cue to pull down for the power - let go to strike, slide it home to cancel.
+  {const strip=$('fine-aim'),pull=$('pull-power');let fa=null,pp=null;
+    const canAim=()=>state.started&&!state.inShot&&humanTurn()&&!isAnyOverlayOpen()&&!state.ballInHand&&!state.decision;
+    strip?.addEventListener('pointerdown',ev=>{if(!canAim())return;fa={id:ev.pointerId,x:ev.clientX};strip.setPointerCapture(ev.pointerId);strip.classList.add('active');ev.preventDefault();});
+    strip?.addEventListener('pointermove',ev=>{if(!fa||fa.id!==ev.pointerId||!canAim())return;state.aim+=(ev.clientX-fa.x)*.00032;fa.x=ev.clientX;state.aimKnown=true;autoNominate();});
+    const faEnd=ev=>{if(fa&&fa.id===ev.pointerId){fa=null;strip.classList.remove('active');}};
+    strip?.addEventListener('pointerup',faEnd);strip?.addEventListener('pointercancel',faEnd);
+    const paint=d=>{if(!pull)return;pull.style.setProperty('--pull',d.toFixed(3));pull.dataset.p=d>.06?Math.round(5+95*d)+'%':'PULL';};
+    pull?.addEventListener('pointerdown',ev=>{if(!canAim()||stroke.on)return;if(controlsLocked()){lockedNotice();return;}
+      pp={id:ev.pointerId,y0:ev.clientY,d:0};pull.setPointerCapture(ev.pointerId);pull.classList.add('pulling');ev.preventDefault();});
+    pull?.addEventListener('pointermove',ev=>{if(!pp||pp.id!==ev.pointerId)return;
+      const h=pull.getBoundingClientRect().height||200,d=clamp((ev.clientY-pp.y0)/(h*.8),0,1);pp.d=d;paint(d);
+      if(d>.06){$('power-slider').value=String(Math.round(5+95*d));syncPower();}});
+    const ppEnd=ev=>{if(!pp||pp.id!==ev.pointerId)return;const d=pp.d;pp=null;pull.classList.remove('pulling');paint(0);
+      if(ev.type==='pointerup'&&d>.06&&canAim())playShot(false);};
+    pull?.addEventListener('pointerup',ppEnd);pull?.addEventListener('pointercancel',ppEnd);
+    window.addEventListener('pointerdown',ev=>{if(ev.pointerType==='touch')document.body.classList.add('touch');},{capture:true,passive:true});}
   window.addEventListener('keydown',ev=>{
     const tag=document.activeElement?.tagName;if(tag==='INPUT'&&ev.key!=='Escape')return;
     if(ev.key==='Escape'){
@@ -3523,11 +3628,12 @@
     }
     if(isAnyOverlayOpen()||!state.started)return;
     if(ev.code==='Space'){ev.preventDefault();playShot();}
-    if(ev.key==='c'||ev.key==='C')setCamera(cam.mode+1);
-    if(ev.key==='p'||ev.key==='P')setCamera(PLAYER_PRESET);
+    if(ev.key==='c'||ev.key==='C')cycleView(ev.shiftKey?-1:1);
+    if(ev.key==='p'||ev.key==='P')goView('aim');
+    if(ev.key==='Home'){ev.preventDefault();resetCamera();}
     if(ev.key==='s'||ev.key==='S')skipBotTurn();
     if(ev.key==='e'||ev.key==='E')useEscapeHint();
-    if(ev.key==='a'||ev.key==='A')setAutoCamera(!autoCamera);
+    if(ev.key==='a'||ev.key==='A')toggleAutoTv();
     if(ev.key==='h'||ev.key==='H'){$('hud-button').click();}
     if(ev.key==='f'||ev.key==='F')$('focus-pick').click();
     if(ev.key==='v'||ev.key==='V')$('rail-fade-toggle').click();

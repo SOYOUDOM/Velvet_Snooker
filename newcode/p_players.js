@@ -277,7 +277,7 @@
     twoBone(r.lua,r.lfa,r.lh,_v1,_v3.copy(_v2).addScaledVector(st.Rt,-.6).add(_v4.set(0,-.15,0)));
     r.lh.getWorldPosition(_v2);aimBone(r.lh,r.lf,_v3.copy(_v2).addScaledVector(st.F,.12).add(_v4.set(0,-.025,0)));
     if(!st.rest){twistTo(r.lh,r.lf,r.lfing[0][0],r.lfing[3][0],st.Rt);curl(r.lfing,_N.set(0,-1,0),[-.25,-.1,.15]);
-      bridgeV(pl,_v2);aimBone(r.lth0,r.lth1,_v3.copy(_v2).addScaledVector(st.F,.05).add(_v4.set(0,.012,0)));   // the thumb up along the cue
+      bridgeV(pl,_v2);aimBone(r.lth0,r.lth1,_v3.copy(_v2).addScaledVector(st.F,.038).addScaledVector(st.Rt,.004).add(_v4.set(0,.03,0)));   // the thumb cocked up beside the cue: the V it lies in
       bridgeV(pl,_v2);closestOnLine(_v2,st.tip,cueDir,_cl);_cl.y-=.0055;_cl.sub(_v2);
       pl.bridgeFix.addScaledVector(_cl,.5);if(pl.bridgeFix.length()>.07)pl.bridgeFix.setLength(.07);pl.bridgeFix.y=clamp(pl.bridgeFix.y,-.012,.03);}
     else{curl(r.lfing,leftPalm(pl,_N),[.9,1.1,.7]);}   // a fist round the rest's shaft

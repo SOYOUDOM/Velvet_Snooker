@@ -127,8 +127,46 @@
     p.face=f;faces.push(f);return f;
   }
   // Face shapes for the moves of the moment: blinks, and the lids that follow the eyes down to the table.
+  // ---- LIP-SYNC ----
+  // The referee's mouth takes the shapes of what he says, read from his voice
+  // as it plays: an open AA from strong low formants, E and I when the high
+  // ones ring, O and U when only the middle sounds, S and SH from the hiss,
+  // F from a soft hiss, and the lips close (P, B, M) as a word starts after a
+  // pause. The players mouth their reactions (YES!, NO..., COME ON) the same way.
+  const VISEMES=['aa','E','I','O','U','SS','CH','PP','FF','nn','DD','RR','KK','TH'];
+  let visFreq=null,visLevel=0,visQuiet=1;
+  const visRaw={};for(const k of VISEMES)visRaw[k]=0;
+  function voiceVisemes(dt){
+    for(const k of VISEMES)visRaw[k]=0;
+    const lvl=typeof refVoiceLevel==='function'?refVoiceLevel():0;
+    if(!voiceAn||!voicePlaying||lvl<.006){visQuiet+=dt;visLevel=lvl;return visRaw;}
+    if(!visFreq||visFreq.length!==voiceAn.frequencyBinCount)visFreq=new Float32Array(voiceAn.frequencyBinCount);
+    voiceAn.getFloatFrequencyData(visFreq);
+    const hz=(audioContext?audioContext.sampleRate:48000)/(2*visFreq.length),band=(a,b)=>{let e=0;for(let i=Math.floor(a/hz);i<=Math.min(visFreq.length-1,Math.ceil(b/hz));i++)e+=Math.pow(10,visFreq[i]/10);return e;};
+    const lo=band(200,700),mid=band(700,1500),hi=band(1500,3400),sib=band(4200,9000),tot=lo+mid+hi+sib+1e-12,loud=clamp(lvl*5.2,0,1);
+    if(visQuiet>.12&&lvl>visLevel*1.6)visRaw.PP=.9;                          // a word starting after a pause: the lips part from closed
+    visQuiet=0;visLevel=lvl;
+    const fs=sib/tot,fl=lo/tot,fh=hi/tot,fm=mid/tot;
+    if(fs>.4){visRaw[fm>.25?'CH':'SS']=loud*clamp((fs-.3)*2.2,0,1);visRaw.FF=loud*.25;}
+    else{   // vowels from the balance of the bands: a strong second formant is a front vowel (E, I), a high first one an open AA, neither a rounded O or U
+      const front=clamp((hi/(lo+mid+1e-12)-.08)*3.6,0,1),open=clamp((mid/(lo+1e-12)-.18)*1.7,0,1);
+      visRaw.E=loud*front*.75;visRaw.I=loud*clamp(front*2-1,0,1)*.8;visRaw.aa=loud*open*(1-front*.7);
+      visRaw.O=loud*(1-open)*(1-front)*.85;visRaw.U=visRaw.O*.45;visRaw.nn=loud*.15;}
+    return visRaw;
+  }
+  // a reaction mouthed by a player: a short word as a list of [viseme, seconds]
+  const SAY_WORDS={yes:[['I',.07],['E',.1],['SS',.2]],no:[['nn',.08],['O',.26]],comeon:[['KK',.06],['aa',.09],['PP',.05],['O',.08],['nn',.14]],ohno:[['O',.18],['nn',.06],['O',.22]],ugh:[['aa',.12],['KK',.1]]};
+  const SAY_FOR={fistpump:'comeon',win:'yes',acknowledge:'yes',anger:'ugh',regret:'no',facepalm:'ohno',disbelief:'ohno',lose:'no'};
+  function sayWord(f,word,delay=0){const seq=SAY_WORDS[word];if(f&&seq)f.say={seq,at:time+delay};}
+  function wordVisemes(f){
+    const out=f.visW||(f.visW={});for(const k of VISEMES)out[k]=0;
+    const s=f.say;if(!s)return out;let t=time-s.at;if(t<0)return out;
+    for(const [v,d] of s.seq){if(t<d){out[v]=Math.sin(Math.min(1,t/d)*PI)*.85+.15;return out;}t-=d;}
+    f.say=null;return out;
+  }
   function arkitPose(f,b){
     const sh=f.shape,w=f.w;for(const n in sh)sh[n]=0;
+    if(f.vis)for(const k of VISEMES){const v=f.vis[k];if(v>.01)sh['VI_'+k]=v;}
     for(const k of FACE_KEYS){if(k==='blink')continue;const v=w[k];if(!(v>.001))continue;const e=FACE_ARKIT[k];for(const n in e)sh[n]=(sh[n]||0)+e[n]*v;}
     const g=f.pitch||0,lid=Math.min(1,Math.max(b,w.blink)+(g>0?Math.min(.3,g*.6):0));
     sh.EyeBlinkLeft=Math.max(sh.EyeBlinkLeft||0,lid);sh.EyeBlinkRight=Math.max(sh.EyeBlinkRight||0,lid);
@@ -139,6 +177,7 @@
   function faceExpr(p,kind,dur=2.5,delay=0){
     const f=faceOf(p),look=FACE_LOOKS[kind];if(!f||!look)return;
     f.next={look,at:time+delay,until:time+delay+Math.max(.8,dur)};
+    if(SAY_FOR[kind]&&f.arkit&&!f.talks&&Math.random()<.75)sayWord(f,SAY_FOR[kind],delay+.15+Math.random()*.25);
   }
   function lookEyes(f,dt){
     if(time>f.saccAt){f.saccAt=time+.35+Math.random()*1.8;f.sacc.set((Math.random()-.5)*.08,(Math.random()-.5)*.04,(Math.random()-.5)*.08);}
@@ -165,7 +204,7 @@
       if(down&&cb)f.target.set(cb.x,by,cb.z);else f.target.set(fp[0],by,fp[1]);}
     if(ref.person){const f=faceOf(ref.person);if(f){f.talks=true;
       if(ref.task)f.target.set(ref.task.x,by,ref.task.z);else f.target.set(fp[0],by,fp[1]);}}
-    const voice=typeof refVoiceLevel==='function'?refVoiceLevel():0;
+    const voice=typeof refVoiceLevel==='function'?refVoiceLevel():0,vRaw=voiceVisemes(dt);
     for(let n=faces.length-1;n>=0;n--){
       const f=faces[n],p=f.p;
       if(!p.obj.parent){faces.splice(n,1);continue;}       // gone: a new venue, a new match
@@ -173,8 +212,13 @@
       if(f.next&&time>=f.next.at){f.cur=f.next;f.next=null;}
       if(f.cur&&time>f.cur.until)f.cur=null;
       for(const k of FACE_KEYS){let v=f.cur&&f.cur.look[k]||0;if(f.focus&&FACE_FOCUS[k])v=Math.max(v,FACE_FOCUS[k]);f.want[k]=v;}
-      if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));
+      // the mouth: speech shapes where the head has them (from his voice, or a mouthed word), else the jaw with the loudness
+      const src=f.talks?vRaw:f.say?wordVisemes(f):null,kv=1-Math.exp(-dt*24);
+      if(f.arkit&&src){f.vis=f.vis||{};let any=0;for(const k of VISEMES){f.vis[k]=(f.vis[k]||0)+((src[k]||0)-(f.vis[k]||0))*kv;any+=f.vis[k];}
+        if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));f.want.open=Math.max(f.want.open,clamp(f.talk*1.2,0,.12));}}
+      else if(f.talks){f.talk+=(voice-f.talk)*(1-Math.exp(-dt*30));
         f.want.open=Math.max(f.want.open,clamp(f.talk*3.4,0,.42));f.want.pucker=Math.max(f.want.pucker,clamp(f.talk*1.4,0,.16));}
+      else if(f.vis){let any=0;for(const k of VISEMES){f.vis[k]*=1-kv;any+=f.vis[k];}if(any<.01)f.vis=null;}
       const r=1-Math.exp(-dt*6),rt=1-Math.exp(-dt*22);
       for(const k of FACE_KEYS)f.w[k]+=(f.want[k]-f.w[k])*(f.talks&&(k==='open'||k==='pucker')?rt:r);
       if(f.blinkT<0&&time>=f.blinkAt){f.blinkT=0;f.blinkAt=time+(Math.random()<.14?.34:2+Math.random()*4.5);}

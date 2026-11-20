@@ -30,7 +30,7 @@ js = rep(js, "        ai.retryAt=0;ai.plan=plan;ai.thinkUntil=botSkipping()?",
 js = rep(js, "say(['quiet_please'],3.4);", "say(['quiet_please'],3.4);\n    if(kind==='cheer')commSay('crowd',.18,null,{delay:1.4});", 'crowd')
 js = rep(js, "    updateStroke(dt);", "    updateStroke(dt);commIdle(dt);", 'idle')
 js = rep(js, "  function updateCamera(dt){\n", (N / 's_tv.js').read_text() + "  function updateCamera(dt){\n", 'tv module')
-js = rep(js, "    if(autoCamera){directorPlan();cam.focusName='AUTO FOLLOW';", "    const tvLive=tvDirect(dt);\n    if(autoCamera&&!tvLive){directorPlan();cam.focusName='AUTO FOLLOW';", 'tv drives the camera')
+# (the camera controller in k_camera.js calls tvDirect itself)
 js = rep(js, "    if(ev.key==='s'||ev.key==='S')skipBotTurn();", "    if(ev.key==='s'||ev.key==='S')skipBotTurn();\n    if(ev.key==='t'||ev.key==='T')toggleTv();", 'key T')
 js = rep(js, "  // Watch the best shot of the frame again (Y / REPLAY button).", (N / 't_opening.js').read_text() + "  // Watch the best shot of the frame again (Y / REPLAY button).", 'opening module')
 js = rep(js, "    if(cine.kind==='intro')return updateIntro(dt);", "    if(cine.kind==='intro')return updateIntro(dt);\n    if(cine.kind==='opening')return updateOpening(dt);", 'opening dispatch')

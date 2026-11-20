@@ -1,4 +1,4 @@
-# VELVET 7.0 — Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
+# VELVET 7.1 — A New Camera, Touch Controls, Squirt, Throw, Nap and Miscues, Replays with Ball Paths, Lip-Sync, Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
 
 An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is rendered with **Three.js (WebGL 2)** and the people are realistic rigged characters with motion-captured animation. It needs no internet connection.
 
@@ -8,6 +8,27 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
 - Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 95 MB, mostly the people and voices).
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
+
+## Changes in version 7.1 (the camera, touch, the feel of the balls, replays and lip-sync)
+
+- **One camera controller, four views.** AIM (behind the cue ball along your aim: the view to play from), TOP (the whole table from above, fitted to the screen and turned upright on a tall one), TV (the broadcast angles: ◀ ▶) and FREE (orbit any point). The buttons are under the camera name; **C** goes through the views (Shift + C back), **P** returns to AIM, **Home** resets the view.
+  - The aiming view frames the whole shot and holds that framing while you turn, so it no longer pumps in and out as the aim crosses other balls; it turns as one piece round the cue ball, and never away from your aim by itself. The wheel brings it closer or wider; a right drag raises it or swings it round a little (the aim itself never moves).
+  - **AUTO CAM** (the top-bar button, or **A**) is now the shot follow: at the strike the view stays as it was; if the shot will carry the play out of it, one smooth move to the broadcast angle the balls run away from (a high side angle when they run across the table), drifting a little towards the play, then back to your view when the balls have stopped. A hand on the camera during a shot takes over until they stop. Off, the camera stays on your view through every shot.
+  - Changes of view are one smooth move (along an arc that lifts over the table, turning by quaternions, eased in and out); everything else is eased by the frame time, so the camera moves the same at 30 or 144 frames a second, with no drift when you stop.
+  - The camera keeps out of the table (it rides over the rails and the cloth), the floor and the stands, walls, boards and chairs of every arena (measured once per arena); zooming out comes in along its line like a spring arm instead. The referee and the players fade while they stand between the camera and the play, or when the camera is inside them.
+  - **Mouse:** the left button aims (FREE: it turns the camera, and a click aims); the right button moves the camera; the middle button or Alt + drag turns it; Ctrl / ⌘ + drag also moves it; the **wheel zooms** (to the pointer from above); Shift makes any of it fine; Shift + click picks a focus point; double-click a ball to focus on it. Over the shot power the wheel still sets the power; ↑ / ↓ too. (V stays the rail fade and R the practice re-rack, so the aiming view is P and the reset Home.)
+  - **Camera settings** (⚙ next to the views): turn, zoom and move sensitivity, smoothing, the length of a change of view, AUTO CAM on shots, inverted vertical, reset view and default settings. They are kept for next time.
+- **Touch.** One finger aims (a tap on a ball aims at it; with FREE it turns the camera); a pinch zooms and two fingers move the camera (in AIM they raise it or swing it round). A **FINE AIM** strip for small turns, and a cue at the side to **pull down for the power: let go to strike**, slide it back to cancel. A bigger spin pad. On small screens the scene director folds into its title (tap it) and the camera buttons sit above the shot controls.
+- **Sharper on phones.** The picture is drawn at up to the screen's own pixel density within the number of pixels a laptop draws at the same quality, so a phone is no longer stretched up from a third of its sharpness; the people's textures are filtered for viewing at an angle (8× instead of 4×).
+- **The feel of the balls.**
+  - **Squirt:** side pushes the white a little off the line, away from the side struck (about 1.6° with full side). The aiming guide shows it, and the bot allows for it.
+  - **Throw:** the grip between the balls now depends on how fast they slide on each other, as measured on real balls, so a slow cut is thrown more than a fast one.
+  - **The nap:** a slow ball rolling across the table drifts a few centimetres towards the black; more on the club cloths, less in the championship arenas.
+  - **Miscues:** struck right at the edge of the white the tip can slip, more likely the harder the hit, with a click; the spin pad's marker turns red there. Not a foul by itself.
+- **Replays.** A remarkable shot is shown twice: close and slow (the strike, the key ball, the pocket), then from high above at nearly full speed. The paths of the white and the balls that mattered are drawn on the cloth in their colours as they run.
+- **Hands.** The bridge hand's thumb is now cocked up beside the cue, so the cue lies in the V it makes with the first knuckle; the fist stays closed round the butt.
+- **Lip-sync.** The referee's mouth takes the shapes of what he says, read from his voice as it plays (vowels, S and SH, closed lips as a word starts). The players mouth their reactions: YES!, NO, COME ON.
+- New tests: `tools/test_camera_views.py` (every view; the cue ball framed by every cushion and pocket; no pumping; smooth view changes; rapid zooming; the arena edges; 30 against 144 frames a second; the shot follow; touch; resizing; saved settings), `tools/test_physics_feel.py` and `tools/test_lipsync.py`.
 
 ## Changes in version 7.0 (the people at the table at full quality)
 
@@ -553,15 +574,16 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 
 | Action | Input |
 | --- | --- |
-| Aim | Move the mouse over the table (← / → fine-tune). In the player view: move the mouse left / right (Shift = fine) or click a ball |
-| Strike | Space / TAKE SHOT |
-| Shot power | Mouse wheel, ↑ / ↓ or slider |
+| Aim | In the AIM view: move the mouse left / right (Shift = fine) or click a ball. In TOP and TV: move the mouse over the table. In FREE: click where to aim. ← / → fine-tune. Touch: drag, tap a ball, or the FINE AIM strip |
+| Strike | Space / TAKE SHOT; touch: pull the cue at the side down and let go |
+| Shot power | ↑ / ↓, the slider, the wheel over the slider; touch: the pull-down cue |
 | Spin | Spin pad |
 | Place the white in the D | Drag it inside the D |
 | Nominate a colour | Aim at it (automatic) or click it; keys 2–7 |
-| Cameras | C or the arrows, P for the player view, TOP for overhead, A for the auto director |
+| Camera views | AIM / TOP / TV / FREE buttons, C (Shift + C back), P for AIM, ◀ ▶ for the TV angles, Home to reset the view, ⚙ for the camera settings |
+| AUTO CAM (follow each shot) | A / AUTO CAM |
 | Camera focus | F / PICK FOCUS, Shift+click, CUE BALL, RESET |
-| Orbit / zoom | Right-mouse drag / Ctrl+wheel (any camera) |
+| Move / turn / zoom the camera | Right drag moves it (AIM: raises it or swings it round); FREE: left drag turns it; middle drag or Alt + drag turns it; Ctrl / ⌘ + drag moves it; the wheel zooms; Shift = fine; double-click a ball to focus on it. Touch: pinch to zoom, two fingers to move (FREE: one finger turns) |
 | Aim guide: full / short / off | G / AIM GUIDE |
 | Escape hint when snookered (once per match) | E / ESCAPE HINT |
 | Replay the best shot of the frame | Y / REPLAY |
