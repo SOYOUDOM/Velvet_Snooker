@@ -4,7 +4,7 @@ front, closed collar with a black bow tie, bare hands. Every texel is classified
 skin weights (rasterised from the mesh in UV space), so edges are smooth and
 independent of the triangle layout.
 
-usage: python3 -I paint_player.py mesh.json body.tga out_body.png r,g,b [preview.png]
+usage: python3 -I paint_player.py mesh.json body.tga out_body.png r,g,b [preview.png] [--mask vest_mask.png]
 """
 import json
 import re
@@ -173,4 +173,6 @@ for _ in range(6):
 Image.fromarray((np.clip(res, 0, 1) * 255).astype(np.uint8)).save(out_png)
 if preview:
     Image.fromarray((np.clip(res, 0, 1) * 255).astype(np.uint8)).resize((768, 768)).save(preview)
+if '--mask' in sys.argv:   # the waistcoat's own texels, for recolouring a finished outfit (make_pros.py)
+    Image.fromarray(np.round(np.clip(vest, 0, 1) * 255).astype(np.uint8), 'L').save(sys.argv[sys.argv.index('--mask') + 1])
 print('painted texels: vest %.0f  shirt %.0f  bow %.0f  collar %.0f' % ((vest > .5).sum(), (shirt_zone > .5).sum(), bow.sum(), (collar_zone > .5).sum()))

@@ -1,13 +1,38 @@
-# VELVET 7.1 — A New Camera, Touch Controls, Squirt, Throw, Nap and Miscues, Replays with Ball Paths, Lip-Sync, Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
+# VELVET 7.2 — Every Pro in Their Own Body, a Steadier Camera, A New Camera, Touch Controls, Squirt, Throw, Nap and Miscues, Replays with Ball Paths, Lip-Sync, Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
 
 An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is rendered with **Three.js (WebGL 2)** and the people are realistic rigged characters with motion-captured animation. It needs no internet connection.
 
 ## Start
 
 - Extract the ZIP, then open `index.html` in desktop Chrome or Edge with hardware acceleration enabled. Keep the `js`, `css`, `assets` and `characters` folders next to it.
-- Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 95 MB, mostly the people and voices).
+- Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 124 MB, mostly the people and voices).
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
+
+## Changes in version 7.2 (every pro in their own body; a steadier camera)
+
+- **Every pro has a model file of their own, with their own build.** The fifteen pros shared eight bodies, all the same slim-to-average build (Shaun Murphy and Luca Brecel were the same model; so were Judd Trump, Kyren Wilson and Jack Lisowski). Each now has `characters/models/pros/<name>.glb`.
+  - **Builds** are taken from how they look at the table today: Shaun Murphy and Mark Williams heavy, with a round belly; John Higgins short and stocky; Stuart Bingham and Barry Hawkins solid; Mark Selby, Ding Junhui, Kyren Wilson and Mark Allen (after losing six stone) in between; Neil Robertson, Judd Trump and Luca Brecel trimmer; Ronnie O'Sullivan lean; Zhao Xintong and Jack Lisowski slim.
+  - A heavier build is more than a belly. The waist, seat, chest, upper back, arms, legs, neck and jaw line fill out with it, and the waistcoat, shirt and collar fill out with the body, so nothing shows through. A belly settles a little over the belt, and hangs as he bends over the table.
+  - The skeleton is unchanged, so every animation, the stance, the cue and the rest, the faces and the lip-sync work as before. Checked down on the shot: no body goes into the table.
+  - **Heights** come from published figures where there are any; the others are estimated. They run from Zhao Xintong (1.70 m) and John Higgins (1.73 m) to Mark Williams (1.85 m) and Jack Lisowski (1.86 m).
+  - **Faces of their own.** Eight pros shared a face with another pro, or with you. Now each has their own: a different Rocketbox person's head, with its face shapes, full-size textures and hair, on the suit body, with their own waistcoat colour. They are Murphy, Brecel, Wilson, Lisowski, Allen, Hawkins, Bingham and Zhao. The faces are Rocketbox people chosen for hair and age, not likenesses.
+  - Soy "The Titan" Oudom has his own file too. His body is as it was.
+  - The pros are read when first needed (the opponent you pick, your next match in a tournament), not all at the start, so they take no memory until then. A match waits a moment for its players.
+  - Size: each pro's model is about 0.2 MB and each new face about 2 MB, so the game is about 19 MB bigger (`characters/characters-pack.js` 80 MB, the single-file build 124 MB).
+  - With **PEOPLE · HD** the pros keep their own models.
+  - Tools: `tools/make_pros.py` builds them. It uses `tools/node/body_shape.mjs`, which reshapes a body to a build (a waist-to-height ratio, how much of it is belly) and measures the waist like a tape, and `tools/node/swap_body.mjs`, which puts a head on the suit body.
+- **The camera no longer moves by itself when the mouse moves.**
+  - The picture used to slide sideways whenever the mouse crossed a side panel or brought the scoreboard back, and the overhead view zoomed in and out with it. The framing followed how see-through the panels were; it now follows only where they are.
+  - In the aiming view, moving the mouse turns the aim only over the table. On the way to the controls, or over the crowd, the aim and the camera stay where they are.
+  - New in ⚙: **AIM · HOLD THE BUTTON** turns the aim only while the left button is held. A click still aims at the spot.
+  - The aiming view keeps its framing through small turns of the aim. It re-frames only when the shot needs it (another ball, a much longer or shorter shot), not after every pause.
+  - Camera labels are written only when they change. Before, they were rewritten on every movement of the mouse during a drag.
+- New checks in `tools/test_camera_views.py`:
+  - the mouse round the screen again and again: no view moves or slides;
+  - the aiming view, with the mouse off the table and over it;
+  - hold to aim;
+  - small turns keeping the framing.
 
 ## Changes in version 7.1 (the camera, touch, the feel of the balls, replays and lip-sync)
 
@@ -574,7 +599,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 
 | Action | Input |
 | --- | --- |
-| Aim | In the AIM view: move the mouse left / right (Shift = fine) or click a ball. In TOP and TV: move the mouse over the table. In FREE: click where to aim. ← / → fine-tune. Touch: drag, tap a ball, or the FINE AIM strip |
+| Aim | In the AIM view: move the mouse left / right over the table (Shift = fine), or click a ball; with ⚙ AIM · HOLD THE BUTTON, hold the left button and move. In TOP and TV: move the mouse over the table. In FREE: click where to aim. ← / → fine-tune. Touch: drag, tap a ball, or the FINE AIM strip |
 | Strike | Space / TAKE SHOT; touch: pull the cue at the side down and let go |
 | Shot power | ↑ / ↓, the slider, the wheel over the slider; touch: the pull-down cue |
 | Spin | Spin pad |

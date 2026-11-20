@@ -321,10 +321,29 @@
     }
     return n;
   };
+  // Characters marked lazy (the pros: each has a model and textures of their own) are not read at the start but
+  // when first needed: People.ensure(id) reads one, once, and tells the page (a 'velvet-character' event).
+  People.later = {};
+  const reading = {};
+  People.ensure = function (id) {
+    if (People.templates[id]) return Promise.resolve(People.templates[id]);
+    const l = People.later[id];
+    if (!l) return Promise.resolve(null);
+    if (!reading[id]) reading[id] = People.loadEntry(l.entry, l.order)
+      .catch((e) => { People.errors.push(id + ': ' + e.message); })
+      .then(() => {
+        delete People.later[id];
+        try { window.dispatchEvent(new CustomEvent('velvet-character', { detail: id })); } catch (e) {}
+        return People.templates[id] || null;
+      });
+    return reading[id];
+  };
+  People.waiting = (id) => !!(id && People.later[id] && !People.templates[id]);
   People.load = async function (man) {
     const list = (man && man.people) || [];
     await Promise.all([People.loadClips(man && man.animations), loadHdData()]);
     await Promise.all(list.map(async (entry, order) => {
+      if (entry && entry.lazy && entry.id && !People.templates[entry.id]) { People.later[entry.id] = { entry, order }; return; }
       try { await People.loadEntry(entry, order); }
       catch (e) { People.errors.push((entry && entry.id) + ': ' + e.message); }
     }));

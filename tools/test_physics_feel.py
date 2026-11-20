@@ -15,10 +15,11 @@ with sync_playwright() as p:
     pg.goto(pathlib.Path(sys.argv[1]).resolve().as_uri()); pg.wait_for_function('window.__T && __T.balls && __T.balls.length', timeout=120000)
     pg.click('.mode[data-mode="practice"]'); pg.click('#start-button'); pg.wait_for_function("__T.state.started&&!__T.cine.on", timeout=60000)
     # squirt: the white leaves to the left of the aim with right-hand side, to the right with left-hand side, straight with none
-    sq = pg.evaluate("""()=>{const T=__T,s=T.state,out={};T.newRack(false);const cb=T.cueBall();s.ballInHand=false;
+    # (full side is at the edge of the white, where a miscue can happen by chance: none here, so the line is measured)
+    sq = pg.evaluate("""()=>{const T=__T,s=T.state,out={},rnd=Math.random;Math.random=()=>.999;T.newRack(false);const cb=T.cueBall();s.ballInHand=false;
       for(const sx of [1,0,-1]){cb.x=-1;cb.z=0;s.aim=0;cb.vx=cb.vz=0;s.inShot=false;s.settings[0].power=50;s.settings[0].spinX=sx;s.settings[0].spinY=0;
         T.takeShot(false);out[sx]=+(Math.atan2(cb.vz,cb.vx)*180/Math.PI).toFixed(3);s.inShot=false;cb.vx=cb.vz=0;cb.wx=cb.wy=cb.wz=0;}
-      return out;}""")
+      Math.random=rnd;return out;}""")
     check('squirt: about 1.6° off line, away from the side used', -2.2 < sq['1'] < -1.0 and abs(sq['0']) < 1e-6 and 1.0 < sq['-1'] < 2.2, json.dumps(sq))
     # throw: a half-ball cut sends the object ball a little off the line of centres, more when slow
     # (run the real physics frame by frame and read the blue's direction just after contact)

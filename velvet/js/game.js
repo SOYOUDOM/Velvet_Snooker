@@ -1452,7 +1452,9 @@
   // 'player' characters of the people data file are used.
   function wantPlayerTpl(P,i){
     const tpls=P.list('player');if(!tpls.length)return null;
-    const L=(window.VelvetStudio&&VelvetStudio.links)||{},has=id=>id&&P.templates[id]&&P.templates[id].role==='player'?P.templates[id]:null;
+    const L=(window.VelvetStudio&&VelvetStudio.links)||{},has=id=>{
+      if(P.waiting&&P.waiting(id)){P.ensure(id).then(laterBodies);return null;}   // a pro's own body, still being read: theirs when it arrives
+      return id&&P.templates[id]&&P.templates[id].role==='player'?P.templates[id]:null;};
     const you=has(L.you&&L.you.character)||tpls[0];
     if(i===0)return you;
     const own=state.mode==='versus'?has(L.two&&L.two.character):has(botOpponent&&botOpponent.character);
@@ -1492,6 +1494,12 @@
   // bodies take the chairs.
   function syncPlayerBodies(){
     resetKit();                                       // a new match: the rest back on its hooks, extensions off
+    placeBodies();
+  }
+  // a body that was still being read when it was wanted takes its place when it arrives (between shots)
+  let bodyWait=0;
+  function laterBodies(){clearTimeout(bodyWait);if(state.inShot||stroke.on){bodyWait=setTimeout(laterBodies,400);return;}placeBodies();}
+  function placeBodies(){
     const P=window.VelvetPeople;if(!P||!P.ready||PL.length<2)return;
     for(let i=0;i<2;i++){
       const tpl=wantPlayerTpl(P,i);if(!tpl||PL[i].p.tpl===tpl)continue;
@@ -2998,7 +3006,7 @@
   // along an arc, turning by quaternions; the camera keeps out of the table, the
   // floor and the stands, and anyone standing between it and the play fades.
   let autoCamera=true,railFadeEnabled=true,focusPicking=false;
-  const CAM_DEFAULTS={rot:1,zoom:1,pan:1,smooth:.55,trans:.75,zoomMin:.45,zoomMax:2.6,elMin:.09,elMax:1.55,invertY:false,autoTv:true};
+  const CAM_DEFAULTS={rot:1,zoom:1,pan:1,smooth:.55,trans:.75,zoomMin:.45,zoomMax:2.6,elMin:.09,elMax:1.55,invertY:false,autoTv:true,aimHold:false};
   const camSet=Object.assign({},CAM_DEFAULTS);
   try{const s=JSON.parse(localStorage.getItem('velvet.camera')||'null');
     if(s&&typeof s==='object')for(const k in CAM_DEFAULTS)if(typeof s[k]===typeof CAM_DEFAULTS[k])camSet[k]=s[k];}catch(e){}
@@ -3021,12 +3029,14 @@
   const distFor=(r,fov)=>r*Math.tan(21*PI/180)/Math.tan(fov/2*PI/180);
   const setTarget=(x,y,z)=>{const t=cam.target;t[0]=x;t[1]=y;t[2]=z;};
   const viewOfPreset=i=>i<0?'free':i===PLAYER_PRESET?'aim':i===OVERHEAD_PRESET?'top':'tv';
-  function cameraLabel(name,n){$('camera-tag').innerHTML='<div class="camera-cross">⌗</div><span>'+name+' <b>'+n+'</b></span>';}
+  let labelNow='',uiNow='';
+  function cameraLabel(name,n){const h='<div class="camera-cross">⌗</div><span>'+name+' <b>'+n+'</b></span>';if(h!==labelNow){labelNow=h;$('camera-tag').innerHTML=h;}}
   function labelView(){
     if(cam.view==='tv'){const p=presets[cam.tvPreset];cameraLabel(p.name,p.n);}
     else if(cam.view==='free'&&cam.focusName&&cam.focusName!=='TABLE CENTRE')cameraLabel('FOCUS · '+cam.focusName,'◉');
     else{const l=VIEW_LABEL[cam.view];cameraLabel(l[0],l[1]);}
-    paintCamUI();
+    const ui=cam.view+'|'+JSON.stringify(camSet)+'|'+!!($('cam-panel')&&!$('cam-panel').hidden);
+    if(ui!==uiNow){uiNow=ui;paintCamUI();}
   }
   function paintCamUI(){
     document.querySelector('.camera-switcher')?.classList.toggle('tv-on',cam.view==='tv');
@@ -3035,6 +3045,7 @@
     const tg=(id,on,txt)=>{const b=$(id);if(!b)return;b.classList.toggle('active',!!on);b.setAttribute('aria-pressed',String(!!on));if(txt)b.textContent=txt;};
     tg('cam-autotv',camSet.autoTv,'AUTO CAM ON SHOTS · '+(camSet.autoTv?'ON':'OFF'));
     tg('cam-invert',camSet.invertY,'INVERT VERTICAL · '+(camSet.invertY?'ON':'OFF'));
+    tg('cam-aimhold',camSet.aimHold,'AIM · '+(camSet.aimHold?'HOLD THE BUTTON':'MOVE THE MOUSE'));
     for(const k of ['rot','zoom','pan','smooth','trans']){const e=$('cam-'+k);if(e&&document.activeElement!==e)e.value=String(camSet[k]);
       const o=$('cam-'+k+'-v');if(o)o.textContent=k==='trans'?camSet[k].toFixed(2)+' s':k==='smooth'?Math.round(camSet[k]*100)+'%':camSet[k].toFixed(2)+'×';}
   }
@@ -3153,7 +3164,7 @@
     const dx=Math.cos(aim),dz=Math.sin(aim),ox=tx-cb[0],oz=tz-cb[1];
     return {el,fov,dist:hi,ahead:ox*dx+oz*dz,side:-ox*dz+oz*dx};
   }
-  const af={aim:null,still:0,f:null};
+  const af={aim:null,still:0,f:null,moving:false};
   // The aiming camera: turns with the aim at once, but changes its framing only
   // once the aim has settled - and then over a moment - so it never breathes.
   function aimPose(dt,aim){
@@ -3161,7 +3172,13 @@
     const turn=af.aim==null?9:Math.abs(Math.atan2(Math.sin(aim-af.aim),Math.cos(aim-af.aim)));af.aim=aim;
     af.still=turn<.0004+.002*dt?af.still+dt:0;
     if(!af.f||cam.snap||af.still>.16){const want=shotFrame(aim);
-      if(want){if(!af.f||cam.snap)af.f=want;else{const k=1-Math.exp(-dt*3.2);for(const key of ['el','fov','dist','ahead','side'])af.f[key]+=(want[key]-af.f[key])*k;}}}
+      if(want){if(!af.f||cam.snap){af.f=want;af.moving=false;}
+        else{const f=af.f,off=Math.abs(want.dist-f.dist)/want.dist,shift=Math.hypot(want.ahead-f.ahead,want.side-f.side),del=Math.abs(want.el-f.el);
+          // a new framing only when this one no longer suits the shot (another ball, a much longer or shorter
+          // shot); then it eases all the way there. Small turns of the aim keep the picture as it is.
+          if(!af.moving&&(off>.2||shift>.3||del>.08))af.moving=true;
+          if(af.moving){const k=1-Math.exp(-dt*3.2);for(const key of ['el','fov','dist','ahead','side'])f[key]+=(want[key]-f[key])*k;
+            if(off<.02&&shift<.03&&del<.01)af.moving=false;}}}}
     if(!af.f)return false;
     // the whole view turns as one piece round the cue ball, following a smoothed aim: never a chord, never a wobble
     if(af.sAim==null||cam.snap)af.sAim=aim;else af.sAim+=Math.atan2(Math.sin(aim-af.sAim),Math.cos(aim-af.sAim))*(1-Math.exp(-dt*camRate()*1.6));
@@ -3426,8 +3443,8 @@
     viewShift=lerp(viewShift,want,1-Math.exp(-dt*6));
     // and sideways, to the middle of the free space between the panels down the sides
     let wantX=0;
-    if(state.started&&!document.body.classList.contains('hud-off')){const side=(el,left)=>{if(!el||+getComputedStyle(el).opacity<.3)return 0;const rc=el.getBoundingClientRect();
-        if(!(rc.width>0&&rc.height>height*.3))return 0;return left?Math.max(0,rc.right):Math.max(0,width-rc.left);};
+    if(state.started&&!document.body.classList.contains('hud-off')){const side=(el,left)=>{if(!el||el.hidden||!el.offsetParent&&getComputedStyle(el).position!=='fixed')return 0;
+        const w=el.offsetWidth,h=el.offsetHeight,l=el.offsetLeft;if(!(w>0&&h>height*.3))return 0;return left?Math.max(0,l+w):Math.max(0,width-l);};
       wantX=clamp((side(sidePanels[0],true)-side(sidePanels[1],false))*.5,-width*.16,width*.16);}
     viewShiftX=lerp(viewShiftX,wantX,1-Math.exp(-dt*4));
     const s=Math.round(viewShift),sx=Math.round(viewShiftX),fov=2*Math.atan(Math.tan(fovNow*PI/360)*(height+2*s)/height)*180/PI;
@@ -3593,6 +3610,8 @@
     if(!_ray.ray.intersectPlane(_tablePlane,_hitP))return null;
     return [_hitP.x,_hitP.z];
   }
+  // over the table (the cloth and the cushions): where moving the mouse aims in the aiming view
+  function overTable(clientX,clientY){const p=screenToTable(clientX,clientY);return !!p&&Math.abs(p[0])<OUT_X+.02&&Math.abs(p[1])<OUT_Z+.02;}
   // the ball under a point of the screen, if any
   function ballAtScreen(clientX,clientY){
     const p=screenToTable(clientX,clientY);if(!p)return null;
@@ -3603,7 +3622,7 @@
   function playerViewActive(){return cam.view==='aim'&&!cam.sf&&state.started&&!state.finished&&humanTurn()&&!state.ballInHand&&!state.inShot&&!isAnyOverlayOpen();}
   function paintFocusTag(){
     const touch=document.body.classList.contains('touch');
-    const t=playerViewActive()?(touch?'DRAG TO AIM · FINE AIM STRIP · PULL THE CUE TO SHOOT':'MOVE THE MOUSE LEFT / RIGHT TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT')
+    const t=playerViewActive()?(touch?'DRAG TO AIM · FINE AIM STRIP · PULL THE CUE TO SHOOT':camSet.aimHold?'HOLD THE LEFT BUTTON AND MOVE TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT':'MOVE THE MOUSE OVER THE TABLE TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT')
       :cam.view==='free'?(touch?'DRAG TO TURN · PINCH TO ZOOM · TWO FINGERS TO MOVE':'DRAG TO TURN · RIGHT DRAG TO MOVE · WHEEL TO ZOOM'):touch?'TOUCH THE TABLE TO AIM':'AIM WITH YOUR MOUSE';
     if(t!==focusTagText&&$('focus-tag')){focusTagText=t;$('focus-tag').textContent=t;}
   }
@@ -5772,6 +5791,7 @@
     for(const k of ['rot','zoom','pan','smooth','trans'])$('cam-'+k)?.addEventListener('input',ev=>{camSet[k]=clamp(+ev.target.value,k==='smooth'?0:.2,k==='trans'?1.6:2.5);saveCamSet();paintCamUI();});
     $('cam-autotv')?.addEventListener('click',toggleAutoTv);
     $('cam-invert')?.addEventListener('click',()=>{camSet.invertY=!camSet.invertY;saveCamSet();paintCamUI();});
+    $('cam-aimhold')?.addEventListener('click',()=>{camSet.aimHold=!camSet.aimHold;saveCamSet();labelView();paintFocusTag();});
     $('cam-reset-view')?.addEventListener('click',resetCamera);
     $('cam-reset')?.addEventListener('click',()=>{Object.assign(camSet,CAM_DEFAULTS);saveCamSet();paintCamUI();message('CAMERA','DEFAULT SETTINGS RESTORED',1300);});
     labelView();}
@@ -6001,6 +6021,7 @@
     $('tour-info').textContent=info;
     $('tour-play').hidden=!um;
     if(um)$('tour-play').firstChild.textContent=t.current&&t.current.frames[0]+t.current.frames[1]?'CONTINUE MATCH ':'PLAY MATCH ';
+    if(um){const o=OPPONENTS.find(x=>x.id===(um.a==='you'?um.b:um.a)),P=window.VelvetPeople;if(o&&P&&P.waiting&&P.waiting(o.character))P.ensure(o.character);}   // your next opponent's body, read while you look at the draw
     const c=careerLoad();
     $('tour-career').textContent='CAREER · '+c.events+' EVENT'+(c.events===1?'':'S')+' · '+c.titles+' TITLE'+(c.titles===1?'':'S')+' · '+c.finals+' FINAL'+(c.finals===1?'':'S')+' · '+money(c.earnings);
   }
@@ -6034,6 +6055,7 @@
   function tourPlay(){
     const t=tourLoad(),um=tourUserMatch(t);if(!um)return;
     const opp=um.a==='you'?um.b:um.a,best=TOUR_FORMATS[t.format].best[t.round],frames=t.current?t.current.frames.slice():[0,0];
+    if(!bodiesFirst(OPPONENTS.find(o=>o.id===opp),tourPlay))return;
     botOpponent=OPPONENTS.find(o=>o.id===opp)||OPPONENTS[0];botLevel=t.level;
     if(t.venue&&t.venue!==venueId&&VENUES[t.venue])setVenue(t.venue);
     activeOverlay('tournament-screen',false);
@@ -6058,7 +6080,18 @@
     delete b.dataset.sure;b.textContent='NEW TOURNAMENT';
     const n=tourNew(tourFormat,botLevel);tourSave(n);renderTour(n);
   });
-  $('start-button').addEventListener('click',()=>chosenMode==='tournament'?openTournament(true):beginNewGame(false));
+  // The pros are read when first needed: a match waits a moment for its players' bodies (never more than 8 s).
+  function bodiesFirst(opp,go){
+    const P=window.VelvetPeople,L=(window.VelvetStudio&&VelvetStudio.links)||{};
+    const ids=[L.you&&L.you.character,opp&&opp.character,chosenMode==='versus'?L.two&&L.two.character:null].filter(id=>P&&P.waiting&&P.waiting(id));
+    if(!ids.length)return true;
+    if(!bodiesFirst.busy){bodiesFirst.busy=true;message('LOADING THE PLAYERS','A MOMENT',1600);
+      let done=false;const fin=()=>{if(done)return;done=true;bodiesFirst.busy=false;go();};
+      Promise.all(ids.map(id=>P.ensure(id))).then(fin,fin);setTimeout(fin,8000);}
+    return false;
+  }
+  $('start-button').addEventListener('click',()=>{if(chosenMode==='tournament')openTournament(true);
+    else if(bodiesFirst(chosenMode==='bot'?botOpponent:null,()=>beginNewGame(false)))beginNewGame(false);});
   $('menu-button').addEventListener('click',()=>activeOverlay('menu-screen',true));
   $('resume-button').addEventListener('click',()=>activeOverlay('menu-screen',false));
   $('restart-button').addEventListener('click',()=>{activeOverlay('menu-screen',false);newRack(true);message('NEW FRAME','BALLS RACKED · READY TO BREAK');});
@@ -6081,7 +6114,7 @@
   //   point; double-click a ball to focus on it.
   //   Touch: one finger aims (a tap on a ball aims at it) - or turns the FREE
   //   camera; two fingers pinch to zoom and slide to move the camera.
-  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null;
+  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null,aimPress=null;
   function aimAtPoint(px,pz){const cb=cueBall();if(!cb)return;state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();}
   // a click or a tap on the table: a colour to nominate, or where to aim
   function tableClick(ev){
@@ -6130,6 +6163,8 @@
       try{canvas.setPointerCapture(ev.pointerId);}catch(e){}ev.preventDefault();return;}
     if(ev.button!==0)return;
     if(ev.shiftKey){shiftPress={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,moved:false};return;}   // a focus point, unless it moves (then: fine aiming)
+    if(ev.pointerType!=='touch'&&camSet.aimHold&&playerViewActive()){aimPress={id:ev.pointerId,x0:ev.clientX,moved:false};aimMoveX=ev.clientX;
+      try{canvas.setPointerCapture(ev.pointerId);}catch(e){}return;}
     if(ev.pointerType==='touch'){oneFinger={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,lx:ev.clientX,t0:performance.now(),aim0:state.aim,moved:false};return;}
     tableClick(ev);
   });
@@ -6167,7 +6202,12 @@
       return;
     }
     if(playerViewActive()){
-      // Player view: sideways mouse movement turns the aim (hold Shift for fine).
+      // Player view: sideways movement of the mouse over the table turns the aim (hold Shift for fine); with
+      // AIM · HOLD THE BUTTON, only while the left button is held. Elsewhere (the crowd, the floor, on the
+      // way to the controls) the mouse leaves the aim - and so the camera - where they are.
+      const holding=!!(aimPress&&aimPress.id===ev.pointerId||shiftPress&&shiftPress.id===ev.pointerId);
+      if(camSet.aimHold?!holding:!overTable(ev.clientX,ev.clientY)){aimMoveX=null;return;}
+      if(aimPress&&aimPress.id===ev.pointerId&&!aimPress.moved&&Math.abs(ev.clientX-aimPress.x0)>3)aimPress.moved=true;
       if(aimMoveX!==null){state.aim+=(ev.clientX-aimMoveX)*(ev.shiftKey?.00045:.0022);state.aimKnown=true;autoNominate();}
       aimMoveX=ev.clientX;return;
     }
@@ -6184,6 +6224,7 @@
       if(!d.moved&&ev.type==='pointerup'&&d.click){if(d.shiftClick)pickFocusAt(ev);else tableClick(ev);}
       return;}
     if(shiftPress&&shiftPress.id===ev.pointerId){const sp=shiftPress;shiftPress=null;if(!sp.moved&&ev.type==='pointerup')pickFocusAt(ev);}
+    if(aimPress&&aimPress.id===ev.pointerId){const ap=aimPress;aimPress=null;aimMoveX=null;if(!ap.moved&&ev.type==='pointerup')tableClick(ev);}
     if(oneFinger&&oneFinger.id===ev.pointerId){const f=oneFinger;oneFinger=null;
       if(!f.moved&&ev.type==='pointerup'&&performance.now()-f.t0<500)tableClick(ev);}
     if(cueDragPointer===ev.pointerId){cueDragPointer=null;refreshUI();message('CUE BALL PLACED','AIM AT THE BALL ON',1300);}
@@ -6356,6 +6397,7 @@
 
   // ---- people: their materials get names when the characters arrive ----
   function personMatLabel(n){n=String(n||'').toLowerCase();return /head|face/.test(n)?'Head and face':/opac|hair|lash/.test(n)?'Hair and lashes':/body|cloth|suit/.test(n)?'Body and clothes':/eye/.test(n)?'Eyes':/teeth|mouth/.test(n)?'Mouth':(n||'Part');}
+  window.addEventListener('velvet-character',()=>objectsTagPeople());   // a pro read later (People.ensure)
   function objectsTagPeople(){
     const P=window.VelvetPeople;if(!P||!P.templates)return;
     for(const [cid,tpl] of Object.entries(P.templates)){let n=0;
@@ -6597,7 +6639,8 @@
       arenaGroup.traverse(o=>{if(o.isLight&&!o.isAmbientLight){const p=new T.Vector3();o.getWorldPosition(p);out.add(vxSpot('LIGHT',p.x,p.y,p.z,0,{color:'#'+o.color.getHexString(),intensity:+o.intensity.toFixed(2)}));}});
       out.userData={venue:v.name,event:v.event};file='venue-'+slugOf(v.name);
     }else if(id.startsWith('people/')){
-      const P=window.VelvetPeople,cid=id.slice(7),pp=P&&P.templates[cid]&&P.spawn(cid);if(!pp)throw new Error('Character not loaded');
+      const P=window.VelvetPeople,cid=id.slice(7);if(P&&P.waiting&&P.waiting(cid))await P.ensure(cid);
+      const pp=P&&P.templates[cid]&&P.spawn(cid);if(!pp)throw new Error('Character not loaded');
       out.add(pp.obj);file='character-'+slugOf(cid);
       const glb=await new T.GLTFExporter().parseAsync(out,{binary:true,onlyVisible:true,maxTextureSize:2048});freePerson(pp);return saveBlob(file+'.glb',new Blob([glb],{type:'model/gltf-binary'}));
     }else if(id.startsWith('obj/')){
@@ -6667,6 +6710,7 @@
   function catalog(){
     const v=VENUES[venueId],P=window.VelvetPeople,G=[],people={player:[],referee:[],audience:[]};
     const opp=Array.isArray(window.VELVET_OPPONENTS)?window.VELVET_OPPONENTS:[];
+    if(P&&P.later)for(const cid of Object.keys(P.later))P.ensure(cid);   // the pros not read yet: they join the list as they arrive
     if(P&&P.templates)for(const [cid,t] of Object.entries(P.templates)){const e=t.entry||{},o=opp.find(x=>x.character===cid);
       (people[t.role]||people.audience).push({id:'people/'+cid,label:(o&&o.name)||e.label||e.name||cid.replace(/[_-]+/g,' '),sub:t.role,keys:['people.'+cid+'.'],export:true,
       info:'Everyone made from this character wears these pictures. SAVE PICTURE gives you the current picture to paint over, so your picture fits the model.'});}

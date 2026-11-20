@@ -3182,6 +3182,7 @@
     for(const k of ['rot','zoom','pan','smooth','trans'])$('cam-'+k)?.addEventListener('input',ev=>{camSet[k]=clamp(+ev.target.value,k==='smooth'?0:.2,k==='trans'?1.6:2.5);saveCamSet();paintCamUI();});
     $('cam-autotv')?.addEventListener('click',toggleAutoTv);
     $('cam-invert')?.addEventListener('click',()=>{camSet.invertY=!camSet.invertY;saveCamSet();paintCamUI();});
+    $('cam-aimhold')?.addEventListener('click',()=>{camSet.aimHold=!camSet.aimHold;saveCamSet();labelView();paintFocusTag();});
     $('cam-reset-view')?.addEventListener('click',resetCamera);
     $('cam-reset')?.addEventListener('click',()=>{Object.assign(camSet,CAM_DEFAULTS);saveCamSet();paintCamUI();message('CAMERA','DEFAULT SETTINGS RESTORED',1300);});
     labelView();}
@@ -3399,6 +3400,7 @@
     $('tour-info').textContent=info;
     $('tour-play').hidden=!um;
     if(um)$('tour-play').firstChild.textContent=t.current&&t.current.frames[0]+t.current.frames[1]?'CONTINUE MATCH ':'PLAY MATCH ';
+    if(um){const o=OPPONENTS.find(x=>x.id===(um.a==='you'?um.b:um.a)),P=window.VelvetPeople;if(o&&P&&P.waiting&&P.waiting(o.character))P.ensure(o.character);}   // your next opponent's body, read while you look at the draw
     const c=careerLoad();
     $('tour-career').textContent='CAREER · '+c.events+' EVENT'+(c.events===1?'':'S')+' · '+c.titles+' TITLE'+(c.titles===1?'':'S')+' · '+c.finals+' FINAL'+(c.finals===1?'':'S')+' · '+money(c.earnings);
   }
@@ -3432,6 +3434,7 @@
   function tourPlay(){
     const t=tourLoad(),um=tourUserMatch(t);if(!um)return;
     const opp=um.a==='you'?um.b:um.a,best=TOUR_FORMATS[t.format].best[t.round],frames=t.current?t.current.frames.slice():[0,0];
+    if(!bodiesFirst(OPPONENTS.find(o=>o.id===opp),tourPlay))return;
     botOpponent=OPPONENTS.find(o=>o.id===opp)||OPPONENTS[0];botLevel=t.level;
     if(t.venue&&t.venue!==venueId&&VENUES[t.venue])setVenue(t.venue);
     activeOverlay('tournament-screen',false);
@@ -3456,7 +3459,18 @@
     delete b.dataset.sure;b.textContent='NEW TOURNAMENT';
     const n=tourNew(tourFormat,botLevel);tourSave(n);renderTour(n);
   });
-  $('start-button').addEventListener('click',()=>chosenMode==='tournament'?openTournament(true):beginNewGame(false));
+  // The pros are read when first needed: a match waits a moment for its players' bodies (never more than 8 s).
+  function bodiesFirst(opp,go){
+    const P=window.VelvetPeople,L=(window.VelvetStudio&&VelvetStudio.links)||{};
+    const ids=[L.you&&L.you.character,opp&&opp.character,chosenMode==='versus'?L.two&&L.two.character:null].filter(id=>P&&P.waiting&&P.waiting(id));
+    if(!ids.length)return true;
+    if(!bodiesFirst.busy){bodiesFirst.busy=true;message('LOADING THE PLAYERS','A MOMENT',1600);
+      let done=false;const fin=()=>{if(done)return;done=true;bodiesFirst.busy=false;go();};
+      Promise.all(ids.map(id=>P.ensure(id))).then(fin,fin);setTimeout(fin,8000);}
+    return false;
+  }
+  $('start-button').addEventListener('click',()=>{if(chosenMode==='tournament')openTournament(true);
+    else if(bodiesFirst(chosenMode==='bot'?botOpponent:null,()=>beginNewGame(false)))beginNewGame(false);});
   $('menu-button').addEventListener('click',()=>activeOverlay('menu-screen',true));
   $('resume-button').addEventListener('click',()=>activeOverlay('menu-screen',false));
   $('restart-button').addEventListener('click',()=>{activeOverlay('menu-screen',false);newRack(true);message('NEW FRAME','BALLS RACKED · READY TO BREAK');});
@@ -3479,7 +3493,7 @@
   //   point; double-click a ball to focus on it.
   //   Touch: one finger aims (a tap on a ball aims at it) - or turns the FREE
   //   camera; two fingers pinch to zoom and slide to move the camera.
-  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null;
+  const touches=new Map();let pinch=null,camDrag=null,oneFinger=null,shiftPress=null,aimPress=null;
   function aimAtPoint(px,pz){const cb=cueBall();if(!cb)return;state.aim=Math.atan2(pz-cb.z,px-cb.x);state.aimKnown=true;autoNominate();}
   // a click or a tap on the table: a colour to nominate, or where to aim
   function tableClick(ev){
@@ -3528,6 +3542,8 @@
       try{canvas.setPointerCapture(ev.pointerId);}catch(e){}ev.preventDefault();return;}
     if(ev.button!==0)return;
     if(ev.shiftKey){shiftPress={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,moved:false};return;}   // a focus point, unless it moves (then: fine aiming)
+    if(ev.pointerType!=='touch'&&camSet.aimHold&&playerViewActive()){aimPress={id:ev.pointerId,x0:ev.clientX,moved:false};aimMoveX=ev.clientX;
+      try{canvas.setPointerCapture(ev.pointerId);}catch(e){}return;}
     if(ev.pointerType==='touch'){oneFinger={id:ev.pointerId,x0:ev.clientX,y0:ev.clientY,lx:ev.clientX,t0:performance.now(),aim0:state.aim,moved:false};return;}
     tableClick(ev);
   });
@@ -3565,7 +3581,12 @@
       return;
     }
     if(playerViewActive()){
-      // Player view: sideways mouse movement turns the aim (hold Shift for fine).
+      // Player view: sideways movement of the mouse over the table turns the aim (hold Shift for fine); with
+      // AIM · HOLD THE BUTTON, only while the left button is held. Elsewhere (the crowd, the floor, on the
+      // way to the controls) the mouse leaves the aim - and so the camera - where they are.
+      const holding=!!(aimPress&&aimPress.id===ev.pointerId||shiftPress&&shiftPress.id===ev.pointerId);
+      if(camSet.aimHold?!holding:!overTable(ev.clientX,ev.clientY)){aimMoveX=null;return;}
+      if(aimPress&&aimPress.id===ev.pointerId&&!aimPress.moved&&Math.abs(ev.clientX-aimPress.x0)>3)aimPress.moved=true;
       if(aimMoveX!==null){state.aim+=(ev.clientX-aimMoveX)*(ev.shiftKey?.00045:.0022);state.aimKnown=true;autoNominate();}
       aimMoveX=ev.clientX;return;
     }
@@ -3582,6 +3603,7 @@
       if(!d.moved&&ev.type==='pointerup'&&d.click){if(d.shiftClick)pickFocusAt(ev);else tableClick(ev);}
       return;}
     if(shiftPress&&shiftPress.id===ev.pointerId){const sp=shiftPress;shiftPress=null;if(!sp.moved&&ev.type==='pointerup')pickFocusAt(ev);}
+    if(aimPress&&aimPress.id===ev.pointerId){const ap=aimPress;aimPress=null;aimMoveX=null;if(!ap.moved&&ev.type==='pointerup')tableClick(ev);}
     if(oneFinger&&oneFinger.id===ev.pointerId){const f=oneFinger;oneFinger=null;
       if(!f.moved&&ev.type==='pointerup'&&performance.now()-f.t0<500)tableClick(ev);}
     if(cueDragPointer===ev.pointerId){cueDragPointer=null;refreshUI();message('CUE BALL PLACED','AIM AT THE BALL ON',1300);}

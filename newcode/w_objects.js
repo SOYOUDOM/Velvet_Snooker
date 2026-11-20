@@ -83,6 +83,7 @@
 
   // ---- people: their materials get names when the characters arrive ----
   function personMatLabel(n){n=String(n||'').toLowerCase();return /head|face/.test(n)?'Head and face':/opac|hair|lash/.test(n)?'Hair and lashes':/body|cloth|suit/.test(n)?'Body and clothes':/eye/.test(n)?'Eyes':/teeth|mouth/.test(n)?'Mouth':(n||'Part');}
+  window.addEventListener('velvet-character',()=>objectsTagPeople());   // a pro read later (People.ensure)
   function objectsTagPeople(){
     const P=window.VelvetPeople;if(!P||!P.templates)return;
     for(const [cid,tpl] of Object.entries(P.templates)){let n=0;
@@ -324,7 +325,8 @@
       arenaGroup.traverse(o=>{if(o.isLight&&!o.isAmbientLight){const p=new T.Vector3();o.getWorldPosition(p);out.add(vxSpot('LIGHT',p.x,p.y,p.z,0,{color:'#'+o.color.getHexString(),intensity:+o.intensity.toFixed(2)}));}});
       out.userData={venue:v.name,event:v.event};file='venue-'+slugOf(v.name);
     }else if(id.startsWith('people/')){
-      const P=window.VelvetPeople,cid=id.slice(7),pp=P&&P.templates[cid]&&P.spawn(cid);if(!pp)throw new Error('Character not loaded');
+      const P=window.VelvetPeople,cid=id.slice(7);if(P&&P.waiting&&P.waiting(cid))await P.ensure(cid);
+      const pp=P&&P.templates[cid]&&P.spawn(cid);if(!pp)throw new Error('Character not loaded');
       out.add(pp.obj);file='character-'+slugOf(cid);
       const glb=await new T.GLTFExporter().parseAsync(out,{binary:true,onlyVisible:true,maxTextureSize:2048});freePerson(pp);return saveBlob(file+'.glb',new Blob([glb],{type:'model/gltf-binary'}));
     }else if(id.startsWith('obj/')){
@@ -394,6 +396,7 @@
   function catalog(){
     const v=VENUES[venueId],P=window.VelvetPeople,G=[],people={player:[],referee:[],audience:[]};
     const opp=Array.isArray(window.VELVET_OPPONENTS)?window.VELVET_OPPONENTS:[];
+    if(P&&P.later)for(const cid of Object.keys(P.later))P.ensure(cid);   // the pros not read yet: they join the list as they arrive
     if(P&&P.templates)for(const [cid,t] of Object.entries(P.templates)){const e=t.entry||{},o=opp.find(x=>x.character===cid);
       (people[t.role]||people.audience).push({id:'people/'+cid,label:(o&&o.name)||e.label||e.name||cid.replace(/[_-]+/g,' '),sub:t.role,keys:['people.'+cid+'.'],export:true,
       info:'Everyone made from this character wears these pictures. SAVE PICTURE gives you the current picture to paint over, so your picture fits the model.'});}

@@ -73,7 +73,9 @@
   // 'player' characters of the people data file are used.
   function wantPlayerTpl(P,i){
     const tpls=P.list('player');if(!tpls.length)return null;
-    const L=(window.VelvetStudio&&VelvetStudio.links)||{},has=id=>id&&P.templates[id]&&P.templates[id].role==='player'?P.templates[id]:null;
+    const L=(window.VelvetStudio&&VelvetStudio.links)||{},has=id=>{
+      if(P.waiting&&P.waiting(id)){P.ensure(id).then(laterBodies);return null;}   // a pro's own body, still being read: theirs when it arrives
+      return id&&P.templates[id]&&P.templates[id].role==='player'?P.templates[id]:null;};
     const you=has(L.you&&L.you.character)||tpls[0];
     if(i===0)return you;
     const own=state.mode==='versus'?has(L.two&&L.two.character):has(botOpponent&&botOpponent.character);
@@ -113,6 +115,12 @@
   // bodies take the chairs.
   function syncPlayerBodies(){
     resetKit();                                       // a new match: the rest back on its hooks, extensions off
+    placeBodies();
+  }
+  // a body that was still being read when it was wanted takes its place when it arrives (between shots)
+  let bodyWait=0;
+  function laterBodies(){clearTimeout(bodyWait);if(state.inShot||stroke.on){bodyWait=setTimeout(laterBodies,400);return;}placeBodies();}
+  function placeBodies(){
     const P=window.VelvetPeople;if(!P||!P.ready||PL.length<2)return;
     for(let i=0;i<2;i++){
       const tpl=wantPlayerTpl(P,i);if(!tpl||PL[i].p.tpl===tpl)continue;

@@ -2,7 +2,7 @@
 keys, touch), keeping out of the table and the stands, frame-rate independence,
 resizing and the saved settings.
 usage: python3 tools/test_camera_views.py <testcopy>/index.html [screens_dir]"""
-import json, math, pathlib, sys
+import functools, http.server, json, math, pathlib, sys, threading
 from playwright.sync_api import sync_playwright
 
 ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"]
@@ -249,7 +249,66 @@ def main():
         check('after resizing: the whole table in the overhead (upright when tall), the cue ball in the aiming view', all(s['ok'] for s in sizes), json.dumps(sizes))
         pg.set_viewport_size({'width': 1280, 'height': 720})
 
-        # 10. The settings panel: saved, restored after a reload, reset to defaults.
+        # 9b. The mouse round the screen, again and again (over the table, the side panels, the scoreboard's
+        #     corner, the controls): the picture never slides and no view moves by itself; the aiming view
+        #     turns only with the mouse over the table (with AIM · HOLD THE BUTTON, only while it is held),
+        #     and small turns of the aim do not re-frame it.
+        POSE = "()=>{const c=__T.camera,v=c.view||{};return [c.position.x,c.position.y,c.position.z,c.quaternion.x,c.quaternion.y,c.quaternion.z,c.quaternion.w,c.fov,v.fullWidth||0,v.offsetX||0,v.offsetY||0].map(x=>+x.toFixed(4))}"
+        tour = [(60, 360), (1230, 360), (1180, 220), (1230, 520), (640, 40), (640, 690), (100, 120), (1250, 650), (60, 600), (640, 360)]
+        def round_trip(times=2):
+            for _ in range(times):
+                for (x, y) in tour: pg.mouse.move(x, y, steps=14); pg.wait_for_timeout(60)
+            pg.wait_for_timeout(900)
+        pg.evaluate("()=>{const s=__T.state;s.inShot=false;s.ballInHand=false;s.current=0;const cb=__T.cueBall();cb.x=-.9;cb.z=.25;cb.vx=cb.vz=0;s.aim=.35;}")
+        slid = {}
+        for v in ['tv', 'top', 'free']:
+            pg.evaluate("v=>__T.goView(v,'cut')", v); pg.wait_for_timeout(1500)
+            p0 = pg.evaluate(POSE); round_trip(); p1 = pg.evaluate(POSE)
+            slid[v] = round(max(abs(a - b) for a, b in zip(p0, p1)), 4)
+        check('the mouse round the screen again and again: no view moves or slides by itself', all(d < 1e-3 for d in slid.values()), json.dumps(slid))
+        pg.evaluate("()=>{__T.goView('aim','cut');__T.resetCamera();}"); pg.wait_for_timeout(1500)
+        rows = pg.evaluate("()=>{const out={off:null,on:null};for(let y=12;y<700;y+=12){const xs=[];for(let x=120;x<=1160;x+=40)xs.push(__T.overTable(x,y));"
+                           "if(out.off==null&&xs.every(v=>!v))out.off=y;if(out.on==null&&xs.slice(8,19).every(v=>v)&&y>200)out.on=y;}return out;}")
+        if rows['off'] is not None: pg.mouse.move(120, rows['off'], steps=1); pg.wait_for_timeout(400)   # straight there, not across the table
+        a0, p0 = pg.evaluate("__T.state.aim"), pg.evaluate(POSE)
+        if rows['off'] is not None:
+            for _ in range(3):
+                pg.mouse.move(120, rows['off'], steps=20); pg.mouse.move(1160, rows['off'], steps=20)
+        pg.wait_for_timeout(600)
+        a1, p1 = pg.evaluate("__T.state.aim"), pg.evaluate(POSE)
+        pg.mouse.move(560, rows['on'] or 360, steps=1); pg.wait_for_timeout(200); a1b = pg.evaluate("__T.state.aim")
+        pg.mouse.move(700, rows['on'] or 360, steps=12); pg.wait_for_timeout(500)
+        a2 = pg.evaluate("__T.state.aim") - (a1b - a1)
+        check('aiming view: the mouse away from the table leaves the aim and the camera; over the table it turns the aim',
+              rows['off'] is not None and abs(a1 - a0) < 1e-9 and max(abs(x - y) for x, y in zip(p0, p1)) < 1e-3 and abs(a2 - a1) > .05,
+              json.dumps({'rows': rows, 'off': round(a1 - a0, 5), 'on': round(a2 - a1, 4)}))
+        pg.evaluate("()=>{__T.camSet.aimHold=true}"); pg.wait_for_timeout(200)
+        y = rows['on'] or 360
+        a0 = pg.evaluate("__T.state.aim"); pg.mouse.move(500, y, steps=6); pg.mouse.move(780, y, steps=12); a1 = pg.evaluate("__T.state.aim")
+        pg.mouse.move(600, y); pg.mouse.down(); pg.mouse.move(760, y, steps=12); pg.mouse.up(); a2 = pg.evaluate("__T.state.aim")
+        tgt = pg.evaluate("y=>{const cb=__T.cueBall();for(const x of [420,860,640]){const p=__T.screenToTable(x,y);"
+                          "if(p&&__T.overTable(x,y)&&Math.hypot(p[0]-cb.x,p[1]-cb.z)>.3)return {x,y,want:Math.atan2(p[1]-cb.z,p[0]-cb.x),ok:true};}return {ok:false}}", y)
+        if tgt['ok']: pg.mouse.click(tgt['x'], tgt['y'])
+        a3 = pg.evaluate("__T.state.aim")
+        pg.evaluate("()=>{__T.camSet.aimHold=false}")
+        check('AIM · HOLD THE BUTTON: moving alone leaves the aim, a held drag turns it, a click aims at the spot',
+              abs(a1 - a0) < 1e-9 and abs(a2 - a1) > .05 and tgt['ok'] and abs(math.atan2(math.sin(a3 - tgt['want']), math.cos(a3 - tgt['want']))) < .06,
+              json.dumps([round(a1 - a0, 5), round(a2 - a1, 4), round(a3, 4), tgt]))
+        pg.evaluate("()=>{__T.state.aim=.35}"); pg.wait_for_timeout(1500)
+        r0 = pg.evaluate("[__T.cam.radius,__T.cam.el]")
+        for d in [.012, -.02, .015, -.01]:
+            pg.evaluate("d=>{__T.state.aim+=d}", d); pg.wait_for_timeout(450)
+        r1 = pg.evaluate("[__T.cam.radius,__T.cam.el]")
+        check('aiming view: small turns of the aim keep the framing (no re-framing after every pause)',
+              abs(r1[0] - r0[0]) / r0[0] < .01 and abs(r1[1] - r0[1]) < .005, json.dumps([r0, r1]))
+
+        # 10. The settings panel: saved, restored after a reload, reset to defaults. (Over a local web server:
+        #     headless Chrome can lose what a file:// page saved just before a reload.)
+        srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(pathlib.Path(sys.argv[1]).resolve().parent)))
+        srv.RequestHandlerClass.log_message = lambda *a: None
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        pg.goto(f'http://127.0.0.1:{srv.server_address[1]}/index.html'); pg.wait_for_function('window.__T && window.__T.balls && window.__T.balls.length>0', timeout=120000)
+        pg.click('.mode[data-mode="practice"]'); pg.click('#start-button'); pg.wait_for_timeout(500)
         pg.click('#cam-settings'); pg.wait_for_timeout(100)
         pg.evaluate("()=>{const e=document.getElementById('cam-rot');e.value='1.8';e.dispatchEvent(new Event('input',{bubbles:true}));}")
         pg.click('#cam-invert')

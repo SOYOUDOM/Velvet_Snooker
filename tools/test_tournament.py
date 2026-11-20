@@ -43,6 +43,7 @@ def main():
 
         def play_match(win):
             pg.click('#tour-play')
+            pg.wait_for_function("__T.state.tour", timeout=10000)      # (a pro's own body is read first: a moment at most)
             info = pg.evaluate("""()=>({mode:__T.state.mode,tour:__T.state.tour,best:__T.state.match.bestOf,frames:__T.state.match.frames.slice(),
                 name:document.getElementById('player-name-1').textContent})""")
             frames = 0

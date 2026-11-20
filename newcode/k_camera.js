@@ -18,7 +18,7 @@
   // along an arc, turning by quaternions; the camera keeps out of the table, the
   // floor and the stands, and anyone standing between it and the play fades.
   let autoCamera=true,railFadeEnabled=true,focusPicking=false;
-  const CAM_DEFAULTS={rot:1,zoom:1,pan:1,smooth:.55,trans:.75,zoomMin:.45,zoomMax:2.6,elMin:.09,elMax:1.55,invertY:false,autoTv:true};
+  const CAM_DEFAULTS={rot:1,zoom:1,pan:1,smooth:.55,trans:.75,zoomMin:.45,zoomMax:2.6,elMin:.09,elMax:1.55,invertY:false,autoTv:true,aimHold:false};
   const camSet=Object.assign({},CAM_DEFAULTS);
   try{const s=JSON.parse(localStorage.getItem('velvet.camera')||'null');
     if(s&&typeof s==='object')for(const k in CAM_DEFAULTS)if(typeof s[k]===typeof CAM_DEFAULTS[k])camSet[k]=s[k];}catch(e){}
@@ -41,12 +41,14 @@
   const distFor=(r,fov)=>r*Math.tan(21*PI/180)/Math.tan(fov/2*PI/180);
   const setTarget=(x,y,z)=>{const t=cam.target;t[0]=x;t[1]=y;t[2]=z;};
   const viewOfPreset=i=>i<0?'free':i===PLAYER_PRESET?'aim':i===OVERHEAD_PRESET?'top':'tv';
-  function cameraLabel(name,n){$('camera-tag').innerHTML='<div class="camera-cross">⌗</div><span>'+name+' <b>'+n+'</b></span>';}
+  let labelNow='',uiNow='';
+  function cameraLabel(name,n){const h='<div class="camera-cross">⌗</div><span>'+name+' <b>'+n+'</b></span>';if(h!==labelNow){labelNow=h;$('camera-tag').innerHTML=h;}}
   function labelView(){
     if(cam.view==='tv'){const p=presets[cam.tvPreset];cameraLabel(p.name,p.n);}
     else if(cam.view==='free'&&cam.focusName&&cam.focusName!=='TABLE CENTRE')cameraLabel('FOCUS · '+cam.focusName,'◉');
     else{const l=VIEW_LABEL[cam.view];cameraLabel(l[0],l[1]);}
-    paintCamUI();
+    const ui=cam.view+'|'+JSON.stringify(camSet)+'|'+!!($('cam-panel')&&!$('cam-panel').hidden);
+    if(ui!==uiNow){uiNow=ui;paintCamUI();}
   }
   function paintCamUI(){
     document.querySelector('.camera-switcher')?.classList.toggle('tv-on',cam.view==='tv');
@@ -55,6 +57,7 @@
     const tg=(id,on,txt)=>{const b=$(id);if(!b)return;b.classList.toggle('active',!!on);b.setAttribute('aria-pressed',String(!!on));if(txt)b.textContent=txt;};
     tg('cam-autotv',camSet.autoTv,'AUTO CAM ON SHOTS · '+(camSet.autoTv?'ON':'OFF'));
     tg('cam-invert',camSet.invertY,'INVERT VERTICAL · '+(camSet.invertY?'ON':'OFF'));
+    tg('cam-aimhold',camSet.aimHold,'AIM · '+(camSet.aimHold?'HOLD THE BUTTON':'MOVE THE MOUSE'));
     for(const k of ['rot','zoom','pan','smooth','trans']){const e=$('cam-'+k);if(e&&document.activeElement!==e)e.value=String(camSet[k]);
       const o=$('cam-'+k+'-v');if(o)o.textContent=k==='trans'?camSet[k].toFixed(2)+' s':k==='smooth'?Math.round(camSet[k]*100)+'%':camSet[k].toFixed(2)+'×';}
   }
@@ -173,7 +176,7 @@
     const dx=Math.cos(aim),dz=Math.sin(aim),ox=tx-cb[0],oz=tz-cb[1];
     return {el,fov,dist:hi,ahead:ox*dx+oz*dz,side:-ox*dz+oz*dx};
   }
-  const af={aim:null,still:0,f:null};
+  const af={aim:null,still:0,f:null,moving:false};
   // The aiming camera: turns with the aim at once, but changes its framing only
   // once the aim has settled - and then over a moment - so it never breathes.
   function aimPose(dt,aim){
@@ -181,7 +184,13 @@
     const turn=af.aim==null?9:Math.abs(Math.atan2(Math.sin(aim-af.aim),Math.cos(aim-af.aim)));af.aim=aim;
     af.still=turn<.0004+.002*dt?af.still+dt:0;
     if(!af.f||cam.snap||af.still>.16){const want=shotFrame(aim);
-      if(want){if(!af.f||cam.snap)af.f=want;else{const k=1-Math.exp(-dt*3.2);for(const key of ['el','fov','dist','ahead','side'])af.f[key]+=(want[key]-af.f[key])*k;}}}
+      if(want){if(!af.f||cam.snap){af.f=want;af.moving=false;}
+        else{const f=af.f,off=Math.abs(want.dist-f.dist)/want.dist,shift=Math.hypot(want.ahead-f.ahead,want.side-f.side),del=Math.abs(want.el-f.el);
+          // a new framing only when this one no longer suits the shot (another ball, a much longer or shorter
+          // shot); then it eases all the way there. Small turns of the aim keep the picture as it is.
+          if(!af.moving&&(off>.2||shift>.3||del>.08))af.moving=true;
+          if(af.moving){const k=1-Math.exp(-dt*3.2);for(const key of ['el','fov','dist','ahead','side'])f[key]+=(want[key]-f[key])*k;
+            if(off<.02&&shift<.03&&del<.01)af.moving=false;}}}}
     if(!af.f)return false;
     // the whole view turns as one piece round the cue ball, following a smoothed aim: never a chord, never a wobble
     if(af.sAim==null||cam.snap)af.sAim=aim;else af.sAim+=Math.atan2(Math.sin(aim-af.sAim),Math.cos(aim-af.sAim))*(1-Math.exp(-dt*camRate()*1.6));
@@ -380,8 +389,8 @@
     viewShift=lerp(viewShift,want,1-Math.exp(-dt*6));
     // and sideways, to the middle of the free space between the panels down the sides
     let wantX=0;
-    if(state.started&&!document.body.classList.contains('hud-off')){const side=(el,left)=>{if(!el||+getComputedStyle(el).opacity<.3)return 0;const rc=el.getBoundingClientRect();
-        if(!(rc.width>0&&rc.height>height*.3))return 0;return left?Math.max(0,rc.right):Math.max(0,width-rc.left);};
+    if(state.started&&!document.body.classList.contains('hud-off')){const side=(el,left)=>{if(!el||el.hidden||!el.offsetParent&&getComputedStyle(el).position!=='fixed')return 0;
+        const w=el.offsetWidth,h=el.offsetHeight,l=el.offsetLeft;if(!(w>0&&h>height*.3))return 0;return left?Math.max(0,l+w):Math.max(0,width-l);};
       wantX=clamp((side(sidePanels[0],true)-side(sidePanels[1],false))*.5,-width*.16,width*.16);}
     viewShiftX=lerp(viewShiftX,wantX,1-Math.exp(-dt*4));
     const s=Math.round(viewShift),sx=Math.round(viewShiftX),fov=2*Math.atan(Math.tan(fovNow*PI/360)*(height+2*s)/height)*180/PI;
@@ -547,6 +556,8 @@
     if(!_ray.ray.intersectPlane(_tablePlane,_hitP))return null;
     return [_hitP.x,_hitP.z];
   }
+  // over the table (the cloth and the cushions): where moving the mouse aims in the aiming view
+  function overTable(clientX,clientY){const p=screenToTable(clientX,clientY);return !!p&&Math.abs(p[0])<OUT_X+.02&&Math.abs(p[1])<OUT_Z+.02;}
   // the ball under a point of the screen, if any
   function ballAtScreen(clientX,clientY){
     const p=screenToTable(clientX,clientY);if(!p)return null;
@@ -557,7 +568,7 @@
   function playerViewActive(){return cam.view==='aim'&&!cam.sf&&state.started&&!state.finished&&humanTurn()&&!state.ballInHand&&!state.inShot&&!isAnyOverlayOpen();}
   function paintFocusTag(){
     const touch=document.body.classList.contains('touch');
-    const t=playerViewActive()?(touch?'DRAG TO AIM · FINE AIM STRIP · PULL THE CUE TO SHOOT':'MOVE THE MOUSE LEFT / RIGHT TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT')
+    const t=playerViewActive()?(touch?'DRAG TO AIM · FINE AIM STRIP · PULL THE CUE TO SHOOT':camSet.aimHold?'HOLD THE LEFT BUTTON AND MOVE TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT':'MOVE THE MOUSE OVER THE TABLE TO AIM · SHIFT FOR FINE · CLICK A BALL TO AIM AT IT')
       :cam.view==='free'?(touch?'DRAG TO TURN · PINCH TO ZOOM · TWO FINGERS TO MOVE':'DRAG TO TURN · RIGHT DRAG TO MOVE · WHEEL TO ZOOM'):touch?'TOUCH THE TABLE TO AIM':'AIM WITH YOUR MOUSE';
     if(t!==focusTagText&&$('focus-tag')){focusTagText=t;$('focus-tag').textContent=t;}
   }
