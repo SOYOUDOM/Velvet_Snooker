@@ -36,7 +36,7 @@
 
   const BODY_WORDS = { business_male: 'Man in a suit', business_female: 'Woman in a suit', male_adult: 'Man', female_adult: 'Woman', player: 'Snooker player', referee: 'Referee' };
   function bodyLabel(id) {
-    const own = BASE.find((e) => e.id === id && e.name);       // characters made in Blender carry their own name
+    const own = BASE.find((e) => e.id === id && e.name);       // the pros carry their own name
     if (own) return own.name;
     const m = /^([a-z_]+?)_?(\d+)?$/.exec(id || '');
     if (m && BODY_WORDS[m[1]]) return BODY_WORDS[m[1]] + (m[2] ? ' ' + (+m[2]) : '');
@@ -744,12 +744,8 @@
   }
   // Look tab
   const PALETTE = ['#111111', '#f2f2ee', '#1d2f5e', '#7d1520', '#c62a2a', '#1f6f3f', '#4a2a73', '#c8a14a', '#8c8f94', '#d76fa0', '#2f7fd0', '#e08a2a'];
-  // A body without separate texture images (made in Blender) is styled in Blender.
-  const madeInBlender = (e) => { const b = bodyOf(e); return !!b && (b.source === 'blender' || !Object.keys(b.textures || {}).length); };
-  const BLENDER_NOTE = '<div class="sec"><h3>MADE IN BLENDER</h3><p class="note">This character was made in Blender with the VELVET Character Maker add-on. Change his face, hair and clothes there and press “Export again”; here you can set his name, role, profile, shape and cue.</p></div>';
   function panelLook() {
     const e = entryOf(sel.id); if (!e) return '';
-    if (madeInBlender(e)) return BLENDER_NOTE + cueSection(e);
     const c = e.cue || {}, parts = cur.parts || {}, ready = cur.id === e.id;
     const regions = [];
     for (const [k, Pt] of Object.entries(parts)) Pt.regions.forEach((r, i) => regions.push({ k, i, r }));
@@ -783,7 +779,6 @@
   // Face tab
   function panelFace() {
     const e = entryOf(sel.id); if (!e) return '';
-    if (madeInBlender(e)) return BLENDER_NOTE;
     const f = (e.studio && e.studio.face) || null, ready = cur.id === e.id && cur.parts && cur.parts.head, hasFace = !!(ready && cur.lm);
     let html = '<div class="sec"><h3>FACE FROM A PHOTO</h3>'
       + (hasFace ? '<p class="note">A straight-on photo with even light, a neutral face and no glasses works best.</p>' : '<p class="note warn">This model has no face to place a photo on.</p>')

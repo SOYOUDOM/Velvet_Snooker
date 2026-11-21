@@ -1,16 +1,11 @@
 /* VELVET — applies your VELVET Studio edits (characters/studio.js) on top of
    characters/characters.js and js/opponents.js. Those two files are never
    changed by the studio: delete characters/studio.js (or press "Reset all" in
-   the studio) to get the original characters back.
-   Characters exported from Blender (characters/blender.js) join the game's own
-   characters first. Also receives a character from the studio's "Test in game" button: the
+   the studio) to get the original characters back. Also receives a character from the studio's "Test in game" button: the
    game page is opened with #studio-test and waits up to six seconds for it. */
 (function () {
   'use strict';
   const man = window.VELVET_CHARACTERS || (window.VELVET_CHARACTERS = { animations: {}, people: [] });
-  // characters made in Blender (characters/blender.js) count as the game's own
-  const fromBlender = ((window.VELVET_BLENDER && window.VELVET_BLENDER.people) || []).filter((e) => e && e.id && e.model && !man.people.some((b) => b.id === e.id));
-  man.people.push(...fromBlender.map((e) => Object.assign({}, e, { source: 'blender' })));
   const opps = window.VELVET_OPPONENTS || (window.VELVET_OPPONENTS = []);
   const basePeople = man.people.slice(), baseOpps = opps.slice();
   const VS = { data: {}, links: { you: {}, two: {} }, test: null, ready: null, merge, basePeople, baseOpps };

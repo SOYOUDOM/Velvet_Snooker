@@ -27,7 +27,6 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 SCRIPTS = ["js/three.bundle.js", "characters/characters.js", "characters/characters-pack.js", "js/people.js", "js/referee-voice.js", "js/commentary-voice.js", "js/opponents.js", "js/venue-previews.js", "js/studio-merge.js", "js/table-sounds.js", "js/game.js"]
 # Written by VELVET Studio.html; read from beside the standalone file, so studio edits apply without a rebuild.
 STUDIO_DATA = "characters/studio.js"
-BLENDER_DATA = "characters/blender.js"  # written by the Blender add-on
 
 
 def build_standalone(project: pathlib.Path) -> pathlib.Path:
@@ -44,8 +43,7 @@ def build_standalone(project: pathlib.Path) -> pathlib.Path:
     html = replace_once(html, '<link rel="stylesheet" href="css/style.css" />', "<style>\n" + css + "\n</style>", "stylesheet link")
     html = replace_once(html, 'src="assets/crowd-applause.gif"', f'src="{gif_uris["crowd-applause.gif"]}"', "crowd gif img")
     html = replace_once(html, f'  <script defer src="{STUDIO_DATA}"></script>\n', "", "studio data tag")
-    html = replace_once(html, f'  <script defer src="{BLENDER_DATA}"></script>\n', "", "blender data tag")
-    studio_tag = f'<script src="{BLENDER_DATA}"></script>\n<script src="{STUDIO_DATA}"></script>\n'
+    studio_tag = f'<script src="{STUDIO_DATA}"></script>\n'
     parts = ["<script>\n" + code + "\n</script>\n" for code in scripts]
     at = SCRIPTS.index("js/studio-merge.js")
     inline = "".join(parts[:at]) + studio_tag + "".join(parts[at:])

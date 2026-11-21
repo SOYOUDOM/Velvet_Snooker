@@ -41,7 +41,7 @@
     return out.join('/');
   }
   const dirOf = (p) => p.slice(0, p.lastIndexOf('/') + 1);
-  const isStudio = (k) => k.startsWith('characters/studio/') || k.startsWith('characters/blender/');   // packed in characters/studio.js and characters/blender.js
+  const isStudio = (k) => k.startsWith('characters/studio/');   // packed in characters/studio.js
   function bufferFrom(b64) {
     const bin = atob(b64), out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -125,34 +125,9 @@
     }));
   };
   // One character from the people data file -> People.templates[entry.id].
-  // MPFB people (characters/hd.js, made with the Blender add-on): the same
-  // character rebuilt on an MPFB body with its own face and hair and a face
-  // made of morph targets. Experimental, and off unless switched on in the
-  // settings (PEOPLE · MPFB); the file is only read then. A character you
-  // changed in VELVET Studio keeps your version.
-  People.hdOn = function () { try { return localStorage.getItem('velvet.hdPeople') === 'on'; } catch (e) { return false; } };
-  function loadHdData() {
-    if (window.VELVET_HD || !People.hdOn() || typeof document === 'undefined') return Promise.resolve();
-    return new Promise(done => {
-      const s = document.createElement('script');
-      s.src = 'characters/hd.js'; s.onload = s.onerror = () => done();
-      document.head.appendChild(s);
-    });
-  }
-  People.hdLook = function (entry) {
-    const look = window.VELVET_HD && entry && window.VELVET_HD[entry.id];
-    if (!look || !look.model || !People.hdOn()) return null;
-    const vs = window.VelvetStudio;
-    if (vs && vs.basePeople && !vs.basePeople.includes(entry)) return null;     // edited in VELVET Studio
-    return look;
-  };
-  function hdEntry(entry) {
-    const look = People.hdLook(entry);
-    if (!look) return entry;
-    const e = Object.assign({}, entry, { model: look.model, hd: true, face: look.face || [] });
-    for (const k of ['textures', 'normals', 'shine', 'roughness', 'height', 'muscle', 'belly', 'headScale']) delete e[k];
-    return e;
-  }
+  // (The MPFB people of 6.7 - 7.2, an option in the settings, are gone in 7.3: every person is the Rocketbox
+  // model the data file names. A PEOPLE · MPFB setting left from those versions is forgotten.)
+  try { localStorage.removeItem('velvet.hdPeople'); } catch (e) {}
   // Rounder outlines for the people the cameras come close to (players and referees). Every triangle becomes
   // four, and each new point is lifted onto the curved surface that the vertex normals describe (Phong
   // tessellation), so heads, shoulders and arms lose their facets while textures, skinning and the look stay as
@@ -251,15 +226,14 @@
   };
   People.loadEntry = async function (entry, order = 0, opts = {}) {
     if (!entry || !entry.id || !entry.model) throw new Error('entry needs id and model');
-    entry = hdEntry(entry);
-    if (!entry.hd && !entry.shine) {     // made before 7.0 (VELVET Studio) on a body that now has shine maps: the body's
+    if (!entry.shine) {     // made before 7.0 (VELVET Studio) on a body that now has shine maps: the body's
       const vs = window.VelvetStudio, all = (vs && vs.basePeople) || (window.VELVET_CHARACTERS && window.VELVET_CHARACTERS.people) || [];
       const body = all.find((b) => b !== entry && b.model === entry.model && b.shine);
       if (body) entry = Object.assign({}, entry, { shine: body.shine });
     }
     const gltf = await parse(await readFile(entry.model), entry.model), scene = gltf.scene;
     if (!opts.noTextures) await applyTextures(scene, entry);
-    if (!entry.hd && (entry.role === 'player' || entry.role === 'referee') && People.smoothOn()) {
+    if ((entry.role === 'player' || entry.role === 'referee') && People.smoothOn()) {
       scene.traverse((o) => {
         if (!o.isSkinnedMesh || [].concat(o.material).some((m) => m.alphaTest > 0 || m.transparent)) return;
         const g = People.smoothMesh(o.geometry);
@@ -276,10 +250,6 @@
         const nm = m.normalMap && m.normalMap.image;     // a 1-pixel stand-in normal map lights the model in flat, blotchy facets
         if (nm && (nm.width || 0) <= 4 && (nm.height || 0) <= 4) { m.normalMap = null; m.needsUpdate = true; }
         m.envMapIntensity = entry.role === 'referee' ? 0.55 : 0.3; // the arena is dark; only the table is bright
-        if (entry.hd && m.name === 'skin') {   // the classic faces' normal maps light them flat and bright; HD skin gets a soft fill to match
-          m.roughness = 0.6; m.emissive.set(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.32;
-        }
-        if (entry.hd && m.name === 'eyes') m.roughness = Math.max(m.roughness, 0.22);        // moist, without mirroring the dark arena
         if (m.alphaTest > 0) m.side = T.DoubleSide;
       }
     });
@@ -302,7 +272,7 @@
     const hips = scene.getObjectByName('Bip01'), own = {};
     for (const a of gltf.animations) own[a.name] = a;
     const clips = entry.clips || null;
-    const tpl = { name: entry.id, entry, order, scene, role: entry.role || 'audience', female: entry.gender === 'female', hd: !!entry.hd,
+    const tpl = { name: entry.id, entry, order, scene, role: entry.role || 'audience', female: entry.gender === 'female',
       rocketbox: !!hips, rootY: hips ? hips.position.y : 0, own, clipMap: clips, fitted: {}, weight: entry.weight || 1 };
     People.templates[entry.id] = tpl;
     return tpl;
@@ -341,7 +311,7 @@
   People.waiting = (id) => !!(id && People.later[id] && !People.templates[id]);
   People.load = async function (man) {
     const list = (man && man.people) || [];
-    await Promise.all([People.loadClips(man && man.animations), loadHdData()]);
+    await People.loadClips(man && man.animations);
     await Promise.all(list.map(async (entry, order) => {
       if (entry && entry.lazy && entry.id && !People.templates[entry.id]) { People.later[entry.id] = { entry, order }; return; }
       try { await People.loadEntry(entry, order); }

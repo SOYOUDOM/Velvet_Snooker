@@ -1,10 +1,10 @@
-"""VELVET people: classic faces, smoother bodies, clean outfits, and the MPFB people as an option.
-By default the game uses the classic (Rocketbox) players and referee and does not read characters/hd.js.
+"""VELVET people: Rocketbox people only, faces that move, smoother bodies, clean outfits.
+Every person is a Rocketbox model (the MPFB people, characters/hd.js, and the Blender add-on that made them are
+gone since 7.3; a PEOPLE · MPFB setting left from before changes nothing and is forgotten).
 Their faces move through the face bones: they blink, look round and react (a won frame smiles, anger
 lowers the brows), the referee's jaw follows his voice (still when he is quiet). The players and the
 referee are smoothed at load (four triangles for one, nothing cracks), the crowd is not. The painted
-outfits have no specks left. PEOPLE · MPFB loads the twelve MPFB looks after a reload, with morph-target
-faces; a character edited in VELVET Studio keeps the classic model; no console errors.
+outfits have no specks left. No console errors.
 usage: python3 -I tools/test_people.py <test index.html>"""
 import json, pathlib, struct, sys
 import numpy as np
@@ -15,34 +15,17 @@ ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-
 page_path = pathlib.Path(sys.argv[1]).resolve()
 root = page_path.parent
 results, errs = [], []
-IDS = ['player_01', 'player_02', 'pro_m08', 'pro_m07', 'pro_m03', 'pro_b04', 'pro_b02', 'pro_m13', 'pro_oudom', 'referee', 'referee_m2', 'referee_f1']
-FACE = ['blink', 'browsDown', 'browsUp', 'browsWorry', 'frown', 'open', 'press', 'pucker', 'smile', 'sneer', 'squint', 'wide']
 
 
 def check(name, ok, info=''):
     results.append((name, bool(ok))); print(('PASS ' if ok else 'FAIL ') + name + (f'  {info}' if info else ''), flush=True)
 
 
-# ---- the files
-hd_js = (root / 'characters' / 'hd.js').read_text(encoding='utf-8')
-looks = json.loads(next(l for l in hd_js.splitlines() if l.startswith('window.VELVET_HD='))[len('window.VELVET_HD='):-1])
-check('hd.js lists the twelve MPFB players and referees', sorted(looks) == sorted(IDS), ','.join(sorted(looks)))
-bad = []
-for cid in IDS:
-    p = root / 'characters' / 'hd' / (cid + '.glb')
-    if not p.is_file():
-        bad.append(cid + ': no file'); continue
-    b = p.read_bytes(); n = struct.unpack('<I', b[12:16])[0]; js = json.loads(b[20:20 + n])
-    names = set()
-    for m in js['meshes']:
-        names.update((m.get('extras') or {}).get('targetNames') or [])
-    nodes = {x.get('name') for x in js['nodes']}
-    if names != set(FACE): bad.append(cid + ': face ' + ','.join(sorted(names)))
-    if not {'Bip01 Head', 'Bip01 LEye', 'Bip01 REye'} <= nodes: bad.append(cid + ': skeleton')
-    if 'EXT_meshopt_compression' not in (js.get('extensionsUsed') or []): bad.append(cid + ': not compressed')
-check('each MPFB model: twelve face shapes, the game skeleton with eyes, compressed', not bad, '; '.join(bad))
+# ---- the files: no MPFB people, and nothing that makes or reads them
+gone = [f for f in ['characters/hd.js', 'characters/hd', 'characters/blender.js', 'characters/blender', 'blender'] if (root / f).exists()]
+check('no MPFB people: hd.js, characters/hd, blender.js and the Blender add-on are gone', not gone, ', '.join(gone))
 index = page_path.read_text(encoding='utf-8')
-check('index.html does not load hd.js up front', '<script defer src="characters/hd.js">' not in index)
+check('index.html reads no MPFB or Blender people', 'hd.js' not in index and 'blender.js' not in index and 'hd-toggle' not in index)
 
 specks = []
 for name in ['player_01', 'pro_m03', 'pro_b04', 'pro_m13', 'pro_m08']:     # the painted waistcoat fronts
@@ -69,14 +52,14 @@ with sync_playwright() as pw:
     st = pg.evaluate("""() => { const P=VelvetPeople,T=__T,tp=Object.values(P.templates);
       const tris=t=>{let n=0;t.scene.traverse(o=>{if(o.isSkinnedMesh&&!o.material.alphaTest)n+=o.geometry.index.count/3;});return n;};
       const smooth=t=>{let s=0,all=0;t.scene.traverse(o=>{if(o.isSkinnedMesh&&!o.material.alphaTest){all++;if(o.geometry.userData.smoothed)s++;}});return s===all&&all>0;};
-      return {hdData:!!window.VELVET_HD, hd:tp.filter(t=>t.hd).length,
+      return {hdData:!!window.VELVET_HD, notRocketbox:tp.filter(t=>!t.rocketbox).map(t=>t.name),
         pl:T.PL.map(p=>{const f=T.faceOf(p.p);return {hd:p.p.tpl.hd,arkit:!!(f&&f.arkit),shapes:f&&f.meshes[0]?Object.keys(f.meshes[0].morphTargetDictionary).length:0,eyes:f?f.eyes.length:0,ok:p.ok};}),
         ref:(()=>{const f=T.faceOf(T.ref.person);return {hd:T.ref.person.tpl.hd,arkit:!!(f&&f.arkit),shapes:f&&f.meshes[0]?Object.keys(f.meshes[0].morphTargetDictionary).length:0,eyes:f?f.eyes.length:0};})(),
         smoothed:tp.filter(t=>t.role==='player'||t.role==='referee').every(smooth), crowdPlain:tp.filter(t=>t.role==='audience').every(t=>!smooth(t)),
         tris:{player:tris(P.templates.player_01),referee:tris(P.templates.referee)},
-        button:(document.getElementById('hd-toggle')||{}).textContent}; }""")
-    check('classic by default: hd.js not read, no MPFB models, the settings show PEOPLE · CLASSIC',
-          not st['hdData'] and st['hd'] == 0 and st['button'] == 'PEOPLE · CLASSIC', json.dumps([st['hdData'], st['hd'], st['button']]))
+        button:!!document.getElementById('hd-toggle')}; }""")
+    check('every person is a Rocketbox model; no PEOPLE · MPFB in the settings',
+          not st['hdData'] and not st['notRocketbox'] and not st['button'], json.dumps([st['hdData'], st['notRocketbox'], st['button']]))
     check('both players and the referee have face shapes (52 ARKit + 15 speech shapes, two eyes)',
           all(p['arkit'] and p['shapes'] == 67 and p['eyes'] == 2 and p['ok'] for p in st['pl']) and st['ref']['arkit'] and st['ref']['shapes'] == 67 and st['ref']['eyes'] == 2,
           json.dumps([st['pl'], st['ref']]))
@@ -118,7 +101,7 @@ with sync_playwright() as pw:
     check('the referee is quiet: voice level 0, his jaw shut', quiet['voice'] == 0 and quiet['jaw'] < .02, json.dumps(quiet))
     # 7.0: the people at the table at full quality, and their textures given back when they leave it
     full = pg.evaluate("""() => { const P=VelvetPeople,T=__T,R=T.renderer,out={bad:[]};
-      for (const t of Object.values(P.templates)) { if (t.role!=='player'&&t.role!=='referee'||t.hd||t.name.startsWith('__')) continue;
+      for (const t of Object.values(P.templates)) { if (t.role!=='player'&&t.role!=='referee'||t.name.startsWith('__')) continue;
         const parts={};t.scene.traverse(o=>{if(o.isMesh)parts[o.material.name.split('_').pop()]=o;});
         const h=parts.head,b=parts.body,w=x=>x&&x.material.map&&x.material.map.image&&x.material.map.image.width;
         const own=t.name==='pro_oudom';
@@ -138,18 +121,14 @@ with sync_playwright() as pw:
           full['release']['gone'] == full['release']['maps'] > 0 and full['release']['down'] <= full['release']['up'] - full['release']['maps'] and full['release']['keptDisposed'] == 0,
           json.dumps(full['release']))
 
+    # a PEOPLE · MPFB setting saved by an older version: still the Rocketbox people, and the setting is forgotten
     pg.evaluate("() => localStorage.setItem('velvet.hdPeople','on')")
     pg.reload(); pg.wait_for_function(WAIT, timeout=400000); pg.wait_for_timeout(1500)
-    on = pg.evaluate("""() => { const P=VelvetPeople,T=__T,f=T.faceOf(T.PL[0].p);
-      const base=(window.VelvetStudio&&VelvetStudio.basePeople||[]).find(e=>e.id==='player_01'),mine=Object.assign({},base,{textures:Object.assign({},base.textures)});
-      return {hd:Object.values(P.templates).filter(t=>t.hd).map(t=>t.name),crowdHd:Object.values(P.templates).filter(t=>t.hd&&t.role==='audience').length,
-        players:T.PL.every(p=>p.p.tpl.hd),ref:T.ref.person.tpl.hd,morphs:!!(f&&f.meshes.length&&!f.bones&&!f.arkit),
-        base:!!P.hdLook(base),edited:!!P.hdLook(mine),button:(document.getElementById('hd-toggle')||{}).textContent}; }""")
-    check('PEOPLE · MPFB: after a reload the twelve MPFB looks load (not the crowd), with morph-target faces',
-          sorted(on['hd']) == sorted(IDS) and on['crowdHd'] == 0 and on['players'] and on['ref'] and on['morphs'] and on['button'] == 'PEOPLE · MPFB',
-          json.dumps({k: v for k, v in on.items() if k != 'hd'}))
-    check('a character edited in VELVET Studio keeps the classic model', on['base'] and not on['edited'], json.dumps([on['base'], on['edited']]))
-    pg.evaluate("() => localStorage.removeItem('velvet.hdPeople')")
+    old = pg.evaluate("""() => { const P=VelvetPeople,T=__T,f=T.faceOf(T.PL[0].p),r=T.faceOf(T.ref.person);
+      return {hdData:!!window.VELVET_HD,notRocketbox:Object.values(P.templates).filter(t=>!t.rocketbox).map(t=>t.name),
+        faces:!!(f&&f.arkit&&r&&r.arkit),setting:localStorage.getItem('velvet.hdPeople')}; }""")
+    check('an old PEOPLE · MPFB setting: still the Rocketbox people with their faces, and the setting is forgotten',
+          not old['hdData'] and not old['notRocketbox'] and old['faces'] and old['setting'] is None, json.dumps(old))
     b.close()
 
 check('no console errors', not errs, ' | '.join(errs[:4]))

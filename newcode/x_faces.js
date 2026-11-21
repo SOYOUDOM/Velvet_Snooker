@@ -6,8 +6,7 @@
   // The people at the table (full-quality Rocketbox, 7.0) do it with their face
   // shapes: the 52 ARKit shapes (with 15 speech shapes beside them). Other
   // Rocketbox people do it with their own face bones: eyelids that swing round
-  // the eyeball, brows, mouth corners, lips, cheeks and jaw. HD people
-  // (characters/hd.js) do it with morph targets named after the moves.
+  // the eyeball, brows, mouth corners, lips, cheeks and jaw.
   const FACE_KEYS=['blink','squint','wide','browsUp','browsDown','browsWorry','smile','frown','press','open','pucker','sneer'];
   const FACE_LOOKS={
     fistpump:{smile:.95,browsUp:.3},acknowledge:{smile:.8,browsUp:.25},satisfied:{smile:.55,press:.15},nod:{smile:.35,press:.1},c_nodyes:{smile:.3},

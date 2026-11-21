@@ -1,4 +1,4 @@
-# VELVET 7.2 — Every Pro in Their Own Body, a Steadier Camera, A New Camera, Touch Controls, Squirt, Throw, Nap and Miscues, Replays with Ball Paths, Lip-Sync, Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
+# VELVET 7.3 — Rocketbox People Only, Every Pro in Their Own Body, a Steadier Camera, A New Camera, Touch Controls, Squirt, Throw, Nap and Miscues, Replays with Ball Paths, Lip-Sync, Full-Quality People with Face Shapes, Real Rests, Your Own Sounds, Soy "The Titan" Oudom, Championship Arena, Commentary Team, Human Bot, Broadcast Presentation
 
 An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is rendered with **Three.js (WebGL 2)** and the people are realistic rigged characters with motion-captured animation. It needs no internet connection.
 
@@ -8,6 +8,21 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
 - Or open `Velvet_Snooker_3D_Physics_Studio_Standalone.html` on its own. The engine, the people, textures and sounds are all embedded in that one file (about 124 MB, mostly the people and voices).
 - Choose **Solo Practice**, **Play the Bot**, **Local Two Player** or **Tournament** and a **Venue**, then click **Enter the Room**. For **Play the Bot**, pick the opponent and level under **Opponent · Level**. The referee and audience appear a second or two after the table.
 - Sound starts after your first click or key press, as most browsers require.
+
+## Changes in version 7.3 (Rocketbox people only: the MPFB people are gone)
+
+- **The MPFB people are gone for good.** Since 6.7 the game also had a second set of players and referees, rebuilt in Blender on MPFB bodies: smooth tube-like shirt sleeves, puffy collars, faces painted onto a different head. Since 6.8 they were an option in the settings (**PEOPLE · MPFB**), and a browser that once had it on kept showing them.
+  - The option, its files (`characters/hd.js`, `characters/hd/`) and the code that read them are removed.
+  - A PEOPLE · MPFB setting saved by an older version now changes nothing, and the game forgets it.
+  - Every person in the game is a Microsoft Rocketbox model: the players, the referees, the crowd and the pros in their own bodies.
+  - The game folder is about 20 MB smaller.
+- **The Blender add-on that made those people is gone too.** That was the VELVET Character Maker (`blender/`) and `characters/blender.js`, which brought its people into the game. Without them, nothing can bring an MPFB person back.
+  - VELVET Studio is unchanged: colours, photo faces, sizes and the cue still work on the Rocketbox people.
+  - Blender venues and objects (OBJECTS & TEXTURES) are unchanged too.
+- `tools/test_people.py` checks the new rules:
+  - no MPFB or Blender-made person anywhere;
+  - every person is a Rocketbox model;
+  - an old PEOPLE · MPFB setting changes nothing and is forgotten.
 
 ## Changes in version 7.2 (every pro in their own body; a steadier camera)
 
@@ -20,7 +35,6 @@ An offline 3D snooker game written in **HTML, CSS and JavaScript**. It is render
   - Soy "The Titan" Oudom has his own file too. His body is as it was.
   - The pros are read when first needed (the opponent you pick, your next match in a tournament), not all at the start, so they take no memory until then. A match waits a moment for its players.
   - Size: each pro's model is about 0.2 MB and each new face about 2 MB, so the game is about 19 MB bigger (`characters/characters-pack.js` 80 MB, the single-file build 124 MB).
-  - With **PEOPLE · HD** the pros keep their own models.
   - Tools: `tools/make_pros.py` builds them. It uses `tools/node/body_shape.mjs`, which reshapes a body to a build (a waist-to-height ratio, how much of it is belly) and measures the waist like a tape, and `tools/node/swap_body.mjs`, which puts a head on the suit body.
 - **The camera no longer moves by itself when the mouse moves.**
   - The picture used to slide sideways whenever the mouse crossed a side panel or brought the scoreboard back, and the overhead view zoomed in and out with it. The framing followed how see-through the panels were; it now follows only where they are.
@@ -635,11 +649,9 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 - `Pack Characters.html` — rebuilds the pack after you change or add characters by hand in characters.js
 - `VELVET Studio.html`, `js/studio.js`, `js/studio-tex.js`, `css/studio.css` — the character studio
 - `characters/studio.js` — everything you made in the studio (empty until you save there)
-- `js/studio-merge.js` — applies `characters/blender.js` and `characters/studio.js` on top of the original characters and opponents
+- `js/studio-merge.js` — applies `characters/studio.js` on top of the original characters and opponents
 - `objects/objects.js`, `objects/media/`: what you made in the studio's OBJECTS & TEXTURES workspace. The file is empty until you save there.
-- `characters/blender.js`, `characters/blender/` — the people you exported from Blender (empty until you export one)
-- `characters/hd.js`, `characters/hd/` — the MPFB people (players and referees rebuilt in Blender), used only when PEOPLE · MPFB is on in the settings
-- `blender/` — the VELVET Character Maker add-on for Blender 5.3 (`VELVET_Character_Maker_2.0.0.zip`) and its guide
+- `characters/models/pros/` — each pro's own model, with their own build (see 7.2)
 - `js/people.js` — loads the characters from the data file, applies their textures, fits each animation to each body and spawns animated copies
 - `js/referee-voice.js` — the referee's calls (MP3, embedded)
 - `js/commentary-voice.js` — the commentary team and the MC (Ogg Opus, embedded)
@@ -652,7 +664,7 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
 
 ## Credits and licences
 
-- **People:** [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox), © 2020 Microsoft, MIT licence. Fifteen avatars and fifty animations were converted to compressed glTF. The crowd's textures were resized for the browser; the twelve people at the table use the facial versions of their avatars, with the library's full-size textures, normal and shine maps and face shapes. The referee's outfit was painted onto the *Business_Male_06* texture, and the players' waistcoats and bow ties onto *Business_Male_01* and *Business_Male_03*, for this game. Licence: `licenses/Microsoft-Rocketbox-LICENSE.md`.
+- **People:** [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox), © 2020 Microsoft, MIT licence. Twenty-three avatars and fifty animations were converted to compressed glTF. The crowd's textures were resized for the browser; the twelve people at the table use the facial versions of their avatars, with the library's full-size textures, normal and shine maps and face shapes. The referee's outfit was painted onto the *Business_Male_06* texture, and the players' waistcoats and bow ties onto *Business_Male_01* and *Business_Male_03*, for this game. Eight pros (7.2) wear the heads of *Male_Adult_01*, *02*, *06*, *10*, *11*, *14*, *20* and *Business_Male_07* on the *Business_Male_01* suit. Licence: `licenses/Microsoft-Rocketbox-LICENSE.md`.
 - **3D engine:** [three.js](https://threejs.org), MIT licence (`licenses/three.js-LICENSE.txt`). Mesh decompression uses meshoptimizer by Arseny Kapoulkine, MIT licence (`licenses/meshoptimizer-LICENSE.md`).
 - **Referee and MC voices:** generated with [Kokoro-82M](https://github.com/hexgrad/kokoro) (Apache-2.0) through kokoro-onnx (MIT).
 - **Commentary voices:** the twenty voices picked in the voice audition, pre-recorded offline:
@@ -666,8 +678,6 @@ The simulation steps at a fixed 180 Hz, using a spherical moment of inertia, sli
     - The VCTK corpus, University of Edinburgh (CC BY 4.0), speakers p227, p232, p256 and p270: Tom Kendal, Oliver Kent, Danny Wren and Harry Ackroyd.
     - LibriTTS-R (CC BY 4.0), speaker 4335: Wade Turner.
   - The commentators' names are made up. All voices are synthetic.
-- **HD people:** bodies, face shapes and expression units from MakeHuman / [MPFB 2](https://static.makehumancommunity.org/mpfb.html): the base mesh, targets, rigs, skin masks and the eye texture are CC0. Each face and hair picture is the Rocketbox character's own (MIT, above), carried over in Blender by the VELVET Character Maker.
-- **Blender add-on:** the VELVET Character Maker is GPL-3.0-or-later and works with [MPFB](https://static.makehumancommunity.org/mpfb.html) (GPL). MakeHuman's assets are CC0, so the people you make are yours to use.
 - Game code, table textures and crowd GIFs belong to this project.
 
 ## Limits
